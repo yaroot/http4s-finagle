@@ -17,7 +17,7 @@ mainClass in Compile := Some("com.example.jgitexample.Main")
 
 libraryDependencies ++= {
   val FinagleVersion = "18.5.0"
-  val Http4sVersion = "0.18.10"
+  val Http4sVersion = "0.18.12"
   val Specs2Version = "4.2.0"
   val LogbackVersion = "1.2.3"
   val rhoVersion = "0.18.0"
