@@ -22,7 +22,7 @@ import org.http4s.client.{Client, DisposableResponse}
 object Finagle {
   object Ctx {
     def restore[F[_]](req: Request[F]): Unit = {
-      req.attributes.get(Ctxs.Keys.LocalInfo).foreach(Local.restore)
+      req.attributes.get(Ctxs.Keys.TwitterLocal).foreach(Local.restore)
     }
   }
 
@@ -62,7 +62,7 @@ object Finagle {
       uri <- Uri.fromString(req.uri)
       headers = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       version = if(req.version.minor == 1) HttpVersion.`HTTP/1.1` else HttpVersion.`HTTP/1.0`
-      finagleCtx = AttributeEntry(Ctxs.Keys.LocalInfo, Local.save())
+      finagleCtx = AttributeEntry(Ctxs.Keys.TwitterLocal, Local.save())
     } yield {
       Request[IO](
         method = method,
@@ -195,6 +195,6 @@ object Ctxs {
   }
 
   object Keys {
-    val LocalInfo: AttributeKey[Local.Context] = AttributeKey[Local.Context]
+    val TwitterLocal: AttributeKey[Local.Context] = AttributeKey[Local.Context]
   }
 }
