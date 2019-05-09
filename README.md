@@ -1,6 +1,6 @@
 # Http4s backed by Finagle
 
-- reqeust/response
+- request/response
 - streaming
 
 # TODO

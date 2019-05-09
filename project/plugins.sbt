@@ -1,4 +1,4 @@
-addSbtPlugin("com.geirsson"     % "sbt-scalafmt"         % "1.4.0")
-addSbtPlugin("com.timushev.sbt" % "sbt-updates"          % "0.3.3")
+addSbtPlugin("com.geirsson"     % "sbt-scalafmt"         % "1.5.0")
+addSbtPlugin("com.timushev.sbt" % "sbt-updates"          % "0.4.0")
 addSbtPlugin("net.virtual-void" % "sbt-dependency-graph" % "0.9.0")
-addSbtPlugin("com.eed3si9n"     % "sbt-assembly"         % "0.14.6")
+addSbtPlugin("org.wartremover"  % "sbt-wartremover"      % "2.4.2")
