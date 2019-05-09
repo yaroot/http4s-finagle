@@ -1,6 +1,5 @@
 name := "http4s-finagle"
 organization := "com.github.yaroot"
-version := "0.1"
 scalaVersion := "2.12.8"
 crossScalaVersions := Seq("2.12.8", "2.11.12") //"2.13.0-M5"
 
