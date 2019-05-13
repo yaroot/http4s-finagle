@@ -1,11 +1,11 @@
 package org.http4s.finagle
 
+import cats.data.Kleisli
 import cats.effect._
-import cats.syntax.functor._
-import cats.syntax.flatMap._
+import cats.implicits._
 import cats.effect.interop.twitter.syntax._
 import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Response => FResponse}
-import com.twitter.finagle.{http => FH, Service => Svc}
+import com.twitter.finagle.{Service => Svc, http => FH}
 import com.twitter.io.{Buf, Pipe, Reader}
 import com.twitter.util._
 import fs2.{Chunk, Stream}
@@ -147,38 +147,46 @@ object Finagle {
     }
   }
 
-  def mkServiceFactoryClient[F[_]: ConcurrentEffect](serviceFactory: Uri => Resource[F, Svc[FRequest, FResponse]],
-                                                     streaming: Boolean): Client[F] = {
+  def mkServiceFactoryClient[F[_]: ConcurrentEffect](
+    serviceFactory: Kleisli[F, (Uri.Scheme, Uri.Authority), Svc[FRequest, FResponse]], // Uri => Resource[F, Svc[FRequest, FResponse]],
+    streaming: Boolean
+  ): Client[F] = {
 
     val client = (req: Request[F]) => {
-      serviceFactory(req.uri).use { svc =>
-        fromHttp4sRequest(req, streaming)
-          .flatMap { r =>
-            ConcurrentEffect[F].delay(svc(r)).fromFuture
-          }
-          .flatMap(toHttp4sResponse(_))
+      val key = (req.uri.scheme, req.uri.authority).tupled
+      key match {
+        case Some(k) =>
+          serviceFactory
+            .run(k)
+            .flatMap { svc =>
+              fromHttp4sRequest(req, streaming)
+                .flatMap { r =>
+                  ConcurrentEffect[F].delay(svc(r)).fromFuture
+                }
+            }
+            .flatMap(toHttp4sResponse(_))
+        case None =>
+          Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri}"))
       }
     }
 
     Client(r => Resource.liftF(client(r)))
   }
 
-  def toFVersion(ver: HttpVersion): FH.Version = {
+  def toFVersion(ver: HttpVersion): FH.Version =
     ver match {
       case HttpVersion.`HTTP/1.0` => FH.Version.Http10
       case HttpVersion.`HTTP/1.1` => FH.Version.Http11
       case HttpVersion.`HTTP/2.0` => FH.Version.Http11
       case x                      => FH.Version(x.major, x.minor)
     }
-  }
 
-  def toHVersion(ver: FH.Version): HttpVersion = {
+  def toHVersion(ver: FH.Version): HttpVersion =
     ver match {
       case FH.Version.Http11 => HttpVersion.`HTTP/1.1`
       case FH.Version.Http10 => HttpVersion.`HTTP/1.0`
       case x                 => HttpVersion(x.major, x.minor)
     }
-  }
 
   def liftMessageBody[F[_]: ConcurrentEffect](r: FMessage): EntityBody[F] =
     if (r.isChunked) {
@@ -196,9 +204,8 @@ object Finagle {
   /** read body as a stream */
   def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
     val pipe = new Pipe[Buf]()
-    def writeToPipe(chunk: Chunk[Byte]): F[Future[Unit]] = {
+    def writeToPipe(chunk: Chunk[Byte]): F[Future[Unit]] =
       F.delay(pipe.write(chunk.toBuf))
-    }
     val content = body.chunks.evalMap(chunk => writeToPipe(chunk).fromFuture)
     content.compile.drain.unsafeRunAsyncT.ensure { val _ = pipe.close() }
     pipe
@@ -227,12 +234,11 @@ object Finagle {
   }
 
   implicit class bufOps(private val buf: Buf) extends AnyVal {
-    def liftBodyStream[F[_]]: EntityBody[F] = {
+    def liftBodyStream[F[_]]: EntityBody[F] =
       if (buf.isEmpty) Stream.empty.covary[F]
       else {
         val bytes = Buf.ByteArray.Shared.extract(buf)
         Stream.chunk(Chunk.bytes(bytes)).covary[F]
       }
-    }
   }
 }
