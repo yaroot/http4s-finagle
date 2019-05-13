@@ -62,10 +62,10 @@ libraryDependencies ++= {
   val Http4sVersion            = "0.20.0"
   val Specs2Version            = "4.5.1"
   val Slf4jVersion             = "1.7.25"
-  val CatsEffectTwitterVersion = "0.1.0-M2"
+  val CatsEffectTwitterVersion = "0.1.0"
 
   Seq(
-    "com.github.yaroot" % "cats-effect-interop-twitter" % CatsEffectTwitterVersion,
+    "com.github.yaroot.cats-effect-interop-twitter" %% "cats-effect-interop-twitter" % CatsEffectTwitterVersion,
     "org.http4s"        %% "http4s-client"              % Http4sVersion,
     "org.http4s"        %% "http4s-server"              % Http4sVersion,
     "com.twitter"       %% "finagle-http"               % FinagleVersion,

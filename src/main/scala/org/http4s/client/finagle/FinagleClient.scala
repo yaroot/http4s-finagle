@@ -1,7 +1,7 @@
 package org.http4s.client.finagle
 
 import cats.data.Kleisli
-import cats.implicits._
+import cats.implicits.{catsSyntaxEither => _, _}
 import cats.effect._
 import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.interop.twitter.syntax._
@@ -52,7 +52,7 @@ object ClientFactory {
     factory: Kleisli[F, Key, Svc]
   )(implicit F: ConcurrentEffect[F]): F[Resource[F, Kleisli[F, Key, Svc]]] = {
     // TODO find another way to achieve this
-    def getOrCreate(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): Kleisli[F, Key, Svc] = {
+    def getOrCreate(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): Kleisli[F, Key, Svc] =
       Kleisli { key: Key =>
         ref.get.flatMap { cache =>
           cache.get(key) match {
@@ -72,15 +72,13 @@ object ClientFactory {
           }
         }
       }
-    }
 
-    def closeAll(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): F[Unit] = {
+    def closeAll(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): F[Unit] =
       sem.withPermit {
         ref.get
           .map(_.values.toVector)
           .flatMap(_.traverse(svc => F.delay(svc.close()).fromFuture)) >> ref.set(Map.empty)
       }
-    }
 
     for {
       sem      <- Semaphore.uncancelable(1)

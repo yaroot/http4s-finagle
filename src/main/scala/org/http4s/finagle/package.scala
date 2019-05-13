@@ -2,7 +2,7 @@ package org.http4s.finagle
 
 import cats.data.Kleisli
 import cats.effect._
-import cats.implicits._
+import cats.implicits.{catsSyntaxEither => _, _}
 import cats.effect.interop.twitter.syntax._
 import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Response => FResponse}
 import com.twitter.finagle.{Service => Svc, http => FH}
