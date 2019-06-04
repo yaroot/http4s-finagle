@@ -58,11 +58,11 @@ scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-wa
 resolvers += "jitpack" at "https://jitpack.io"
 
 libraryDependencies ++= {
-  val FinagleVersion           = "19.4.0"
-  val Http4sVersion            = "0.20.0"
+  val FinagleVersion           = "19.5.1"
+  val Http4sVersion            = "0.20.1"
   val Specs2Version            = "4.5.1"
-  val Slf4jVersion             = "1.7.25"
-  val CatsEffectTwitterVersion = "0.1.0"
+  val Slf4jVersion             = "1.7.26"
+  val CatsEffectTwitterVersion = "0.1.1"
 
   Seq(
     "com.github.yaroot.cats-effect-interop-twitter" %% "cats-effect-interop-twitter" % CatsEffectTwitterVersion,
@@ -82,7 +82,7 @@ libraryDependencies ++= {
 addCompilerPlugin("org.spire-math"   % "kind-projector"      % "0.9.10" cross CrossVersion.binary)
 addCompilerPlugin("com.olegpy"       %% "better-monadic-for" % "0.3.0")
 addCompilerPlugin("org.scalamacros"  %% "paradise"           % "2.1.1" cross CrossVersion.full)
-addCompilerPlugin("com.github.cb372" % "scala-typed-holes"   % "0.0.7" cross CrossVersion.full)
+addCompilerPlugin("com.github.cb372" % "scala-typed-holes"   % "0.0.8" cross CrossVersion.full)
 
 scalafmtOnCompile := true
 cancelable in Global := true
