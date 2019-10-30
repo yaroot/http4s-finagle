@@ -1,7 +1,7 @@
 name := "http4s-finagle"
 organization := "com.github.yaroot"
 scalaVersion := "2.12.8"
-crossScalaVersions := Seq("2.12.8", "2.11.12") //"2.13.0-M5"
+crossScalaVersions := Seq("2.12.8", "2.13.1")
 
 scalacOptions := Seq(
   "-deprecation", // Emit warning and location for usages of deprecated APIs.
