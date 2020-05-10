@@ -28,16 +28,22 @@ libraryDependencies ++= {
   )
 }
 
-addCompilerPlugin("org.spire-math"   % "kind-projector"      % "0.9.10" cross CrossVersion.binary)
+addCompilerPlugin("org.typelevel"    % "kind-projector"      % "0.11.0" cross CrossVersion.full)
 addCompilerPlugin("com.olegpy"       %% "better-monadic-for" % "0.3.1")
-addCompilerPlugin("org.scalamacros"  %% "paradise"           % "2.1.1" cross CrossVersion.full)
 addCompilerPlugin("com.github.cb372" % "scala-typed-holes"   % "0.1.3" cross CrossVersion.full)
 
 scalafmtOnCompile := true
 cancelable in Global := true
 
 // wartremoverErrors in (Compile, compile) ++= Warts.all
-wartremoverErrors ++= Warts.all
+wartremoverErrors ++= Warts.allBut(
+  Wart.Any,
+  Wart.Nothing,
+  Wart.AsInstanceOf,
+  Wart.NonUnitStatements,
+  Wart.Overloading,
+  Wart.DefaultArguments
+)
 
 testFrameworks += new TestFramework("minitest.runner.Framework")
 
