@@ -1,7 +1,7 @@
 package org.http4s.client.finagle
 
 import cats.data.Kleisli
-import cats.implicits.{catsSyntaxEither => _, _}
+import cats.implicits._
 import cats.effect._
 import cats.effect.concurrent.{Ref, Semaphore}
 import cats.effect.interop.twitter.syntax._
@@ -12,9 +12,6 @@ import org.http4s.client.Client
 import org.http4s.finagle.Finagle
 
 object FinagleClient {
-  type Svc = Service[FH.Request, FH.Response]
-  type Key = (Uri.Scheme, Uri.Authority)
-
   def apply[F[_]: ConcurrentEffect](
     service: Service[FH.Request, FH.Response],
     streaming: Boolean = true
@@ -22,18 +19,16 @@ object FinagleClient {
     Finagle.mkClient[F](service, streaming)
 
   def fromServiceFactory[F[_]: ConcurrentEffect](
-    serviceFactory: Resource[F, Kleisli[F, Key, Svc]],
+    serviceFactory: Resource[F, Factory[F]],
     streaming: Boolean = true
   ): Resource[F, Client[F]] =
-    serviceFactory.map { f =>
-      Finagle.mkServiceFactoryClient(f, streaming)
+    serviceFactory.map { factory =>
+      Finagle.mkServiceFactoryClient(factory, streaming)
     }
 }
 
 object ClientFactory {
-  import FinagleClient.{Key, Svc}
-
-  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): Kleisli[F, Key, Svc] = Kleisli {
+  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): Factory[F] = Kleisli {
     case (scheme, authority) =>
       val dest    = authority.renderString
       val isHttps = scheme == Uri.Scheme.https
@@ -48,32 +43,32 @@ object ClientFactory {
       }
   }
 
-  def cached[F[_]](
-    factory: Kleisli[F, Key, Svc]
-  )(implicit F: ConcurrentEffect[F]): F[Resource[F, Kleisli[F, Key, Svc]]] = {
-    // TODO find another way to achieve this
-    def getOrCreate(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): Kleisli[F, Key, Svc] =
-      Kleisli { key: Key =>
-        ref.get.flatMap { cache =>
-          cache.get(key) match {
-            case Some(a) => F.pure(a)
-            case None =>
-              sem.withPermit {
-                ref.get.flatMap { cache0 =>
-                  cache0.get(key) match {
-                    case Some(a) => F.pure(a)
-                    case None =>
-                      factory.run(key).flatMap { svc =>
-                        ref.set(cache0.updated(key, svc)).as(svc)
-                      }
-                  }
-                }
-              }
-          }
+  def cachedFactory[F[_]](
+    factory: Factory[F]
+  )(implicit F: ConcurrentEffect[F]): F[Resource[F, Factory[F]]] = {
+    def access(sem: Semaphore[F], ref: Ref[F, Map[ClientKey, HttpService]]): Kleisli[F, ClientKey, HttpService] = {
+      def get(key: ClientKey): F[Option[HttpService]] = ref.get.map(_.get(key))
+      def create(key: ClientKey): F[HttpService] = {
+        for {
+          svc <- factory(key)
+          _   <- ref.getAndUpdate(_.updated(key, svc))
+        } yield svc
+      }
+
+      def getOrCreate(key: ClientKey): F[HttpService] = sem.withPermit {
+        get(key).flatMap {
+          _.fold(create(key))(_.pure[F])
         }
       }
 
-    def closeAll(sem: Semaphore[F], ref: Ref[F, Map[Key, Svc]]): F[Unit] =
+      Kleisli { key: ClientKey =>
+        get(key).flatMap {
+          _.fold(getOrCreate(key))(_.pure[F])
+        }
+      }
+    }
+
+    def closeAll(sem: Semaphore[F], ref: Ref[F, Map[ClientKey, HttpService]]): F[Unit] =
       sem.withPermit {
         ref.get
           .map(_.values.toVector)
@@ -81,11 +76,10 @@ object ClientFactory {
       }
 
     for {
-      sem      <- Semaphore.uncancelable(1)
-      ref      <- Ref.of(Map.empty[Key, Svc])
-      f        = getOrCreate(sem, ref)
-      destroy  = closeAll(sem, ref)
-      resource = f -> destroy
-    } yield Resource(resource.pure[F])
+      sem     <- Semaphore.uncancelable(1)
+      ref     <- Ref.of(Map.empty[ClientKey, HttpService])
+      f       = access(sem, ref)
+      destroy = closeAll(sem, ref)
+    } yield Resource((f, destroy).pure[F])
   }
 }

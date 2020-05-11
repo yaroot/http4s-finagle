@@ -1,8 +1,7 @@
 package org.http4s.finagle
 
-import cats.data.Kleisli
 import cats.effect._
-import cats.implicits.{catsSyntaxEither => _, _}
+import cats.implicits._
 import cats.effect.interop.twitter.syntax._
 import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Response => FResponse}
 import com.twitter.finagle.{Service => Svc, http => FH}
@@ -11,8 +10,8 @@ import com.twitter.util._
 import fs2.{Chunk, Stream}
 import io.chrisdavenport.vault.{Key, Vault}
 import org.http4s._
-import org.http4s.implicits._
 import org.http4s.client.Client
+import org.http4s.client.finagle.Factory
 
 import scala.reflect.ClassTag
 
@@ -49,7 +48,7 @@ object Finagle {
     if (streaming) {
       val freq = FRequest(version, method, uri, unsafeReadBodyStream(req.body))
       setHeaders(freq, req.headers)
-      ConcurrentEffect[F].pure(freq)
+      freq.pure[F]
     } else {
       val body = unsafeReadBody(req.body)
       body.map { buf =>
@@ -122,12 +121,12 @@ object Finagle {
         }
     }
 
-  def mkService[F[_]: ConcurrentEffect](routes: HttpRoutes[F], streaming: Boolean): Svc[FRequest, FResponse] =
+  def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       fromFinagleRequest(freq) match {
         case Left(exc) => Future.exception[FResponse](exc)
         case Right(req) =>
-          routes.orNotFound
+          app
             .run(req)
             .unsafeRunAsyncT
             .flatMap(toFinagleResponse(_, streaming))
@@ -148,7 +147,7 @@ object Finagle {
   }
 
   def mkServiceFactoryClient[F[_]: ConcurrentEffect](
-    serviceFactory: Kleisli[F, (Uri.Scheme, Uri.Authority), Svc[FRequest, FResponse]], // Uri => Resource[F, Svc[FRequest, FResponse]],
+    serviceFactory: Factory[F],
     streaming: Boolean
   ): Client[F] = {
 
@@ -166,7 +165,7 @@ object Finagle {
             }
             .flatMap(toHttp4sResponse(_))
         case None =>
-          Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri}"))
+          Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
     }
 
