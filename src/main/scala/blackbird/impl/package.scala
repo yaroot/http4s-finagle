@@ -24,7 +24,7 @@ object Ctx {
   }
 }
 
-object BlackbirdImpl {
+object Impl {
   def isChunking(h: Header): Boolean =
     h match {
       case encoding: headers.`Transfer-Encoding` => encoding.hasChunked
