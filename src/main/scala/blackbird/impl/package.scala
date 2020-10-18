@@ -1,4 +1,4 @@
-package blackbird.finagle
+package blackbird.impl
 
 import cats.effect._
 import cats.implicits._
