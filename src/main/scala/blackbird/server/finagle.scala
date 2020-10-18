@@ -1,4 +1,4 @@
-package org.http4s.server
+package blackbird.server
 
 import java.net.SocketAddress
 import cats.effect.ConcurrentEffect

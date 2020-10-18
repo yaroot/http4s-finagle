@@ -1,10 +1,10 @@
-package org.http4s.client
+package blackbird
 
 import cats.data.Kleisli
 import com.twitter.finagle.{http => FH, Service}
 import org.http4s.Uri
 
-package object finagle {
+package object client {
   type Factory[F[_]] = Kleisli[F, ClientKey, HttpService]
 
   type HttpService = Service[FH.Request, FH.Response]

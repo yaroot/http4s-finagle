@@ -1,4 +1,4 @@
-package org.http4s.client.finagle
+package blackbird
 
 import cats.data.Kleisli
 import cats.implicits._
@@ -9,7 +9,6 @@ import com.twitter.finagle.{Http, http => FH}
 import com.twitter.finagle.Service
 import org.http4s.Uri
 import org.http4s.client.Client
-import org.http4s.finagle.Finagle
 
 object FinagleClient {
   def apply[F[_]: ConcurrentEffect](

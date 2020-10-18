@@ -1,4 +1,4 @@
-package org.http4s.finagle
+package blackbird.finagle
 
 import cats.effect._
 import cats.implicits._
@@ -11,7 +11,7 @@ import fs2.{Chunk, Stream}
 import io.chrisdavenport.vault.{Key, Vault}
 import org.http4s._
 import org.http4s.client.Client
-import org.http4s.client.finagle.Factory
+import blackbird
 
 import scala.reflect.ClassTag
 
