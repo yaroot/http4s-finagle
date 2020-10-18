@@ -34,7 +34,7 @@ object Effects {
           p.updateIfEmpty(Throw(ex))
           F.toIO(cancel).unsafeRunAsyncAndForget()
         }
-      })(e => IO.delay(p.updateIfEmpty(e.fold(Throw(_), Return(_)))))
+      })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
 
     p
   }

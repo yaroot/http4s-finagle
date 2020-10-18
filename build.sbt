@@ -35,16 +35,6 @@ addCompilerPlugin("com.github.cb372" % "scala-typed-holes"  % "0.1.5" cross Cros
 scalafmtOnCompile := true
 cancelable in Global := true
 
-// wartremoverErrors in (Compile, compile) ++= Warts.all
-wartremoverErrors ++= Warts.allBut(
-  Wart.Any,
-  Wart.Nothing,
-  Wart.AsInstanceOf,
-  Wart.NonUnitStatements,
-  Wart.Overloading,
-  Wart.DefaultArguments
-)
-
 testFrameworks += new TestFramework("minitest.runner.Framework")
 
 version ~= (_.replace('+', '-'))

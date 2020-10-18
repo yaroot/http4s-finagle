@@ -9,7 +9,7 @@ import cats.implicits._
 import com.twitter.finagle.{Http, ListeningServer, Service, http => FH}
 import org.http4s.{HttpApp, Uri}
 import org.http4s.client.Client
-import blackbird.impl.Impl
+import blackbird.impl._
 
 object Blackbird {
   def apply[F[_]: ConcurrentEffect](
@@ -81,7 +81,9 @@ object ClientFactory {
       sem.withPermit {
         ref.get
           .map(_.values.toVector)
-          .flatMap(_.traverse(svc => F.delay(svc.close()).fromFuture)) >> ref.set(Map.empty)
+          .flatMap(
+            _.traverse(svc => Effects.fromFuture(F.delay(svc.close())))
+          ) >> ref.set(Map.empty)
       }
 
     for {
