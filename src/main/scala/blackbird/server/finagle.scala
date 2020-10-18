@@ -4,7 +4,6 @@ import java.net.SocketAddress
 import cats.effect.ConcurrentEffect
 import com.twitter.finagle.{ListeningServer, Http => FHttp, http => fhttp}
 import org.http4s._
-import org.http4s.finagle.Finagle
 
 package object finagle {
   implicit class finagleServer(val svr: FHttp.Server) extends AnyVal {
