@@ -106,7 +106,7 @@ object Impl {
       }
       Future.value(fresp)
     } else {
-      Effects
+      Convertions
         .unsafeRunAsync(unsafeReadBody[F](response.body))
         .map { content =>
           val fresp = FResponse()
@@ -126,7 +126,7 @@ object Impl {
       fromFinagleRequest(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
-          Effects
+          Convertions
             .unsafeRunAsync(app.run(req))
             .flatMap(toFinagleResponse(_, streaming))
       }
@@ -138,7 +138,7 @@ object Impl {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
-          Effects.fromFuture(F.delay(service(freq)))
+          Convertions.fromFuture(F.delay(service(freq)))
         }
         .flatMap(toHttp4sResponse(_))
     }
@@ -161,7 +161,7 @@ object Impl {
             .flatMap { svc =>
               fromHttp4sRequest(req, streaming)
                 .flatMap { r =>
-                  Effects.fromFuture(F.delay(svc(r)))
+                  Convertions.fromFuture(F.delay(svc(r)))
                 }
             }
             .flatMap(toHttp4sResponse(_))
@@ -206,11 +206,11 @@ object Impl {
     val pipe = new Pipe[Buf]()
 
     val accu = body.chunks
-      .evalMap(chunk => Effects.fromFuture(F.delay(pipe.write(chunk.toBuf))))
+      .evalMap(chunk => Convertions.fromFuture(F.delay(pipe.write(chunk.toBuf))))
       .compile
       .drain
 
-    Effects.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
+    Convertions.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
     pipe
   }
 
@@ -231,7 +231,7 @@ object Impl {
           .foldLeft(Buf.Empty)(_.concat(_))
       }
       Stream
-        .eval(Effects.fromFuture(buf0))
+        .eval(Convertions.fromFuture(buf0))
         .flatMap(_.liftBodyStream)
     }
   }
