@@ -28,8 +28,8 @@ object FinagleClient {
 }
 
 object ClientFactory {
-  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): Factory[F] = Kleisli {
-    case (scheme, authority) =>
+  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): Factory[F] =
+    Kleisli { case (scheme, authority) =>
       val dest    = authority.renderString
       val isHttps = scheme == Uri.Scheme.https
 
@@ -41,7 +41,7 @@ object ClientFactory {
         }
         client.newService(dest, s"client-factory-$dest")
       }
-  }
+    }
 
   def cachedFactory[F[_]](
     factory: Factory[F]
@@ -55,11 +55,12 @@ object ClientFactory {
         } yield svc
       }
 
-      def getOrCreate(key: ClientKey): F[HttpService] = sem.withPermit {
-        get(key).flatMap {
-          _.fold(create(key))(_.pure[F])
+      def getOrCreate(key: ClientKey): F[HttpService] =
+        sem.withPermit {
+          get(key).flatMap {
+            _.fold(create(key))(_.pure[F])
+          }
         }
-      }
 
       Kleisli { key: ClientKey =>
         get(key).flatMap {
@@ -76,8 +77,8 @@ object ClientFactory {
       }
 
     for {
-      sem     <- Semaphore.uncancelable(1)
-      ref     <- Ref.of(Map.empty[ClientKey, HttpService])
+      sem    <- Semaphore.uncancelable(1)
+      ref    <- Ref.of(Map.empty[ClientKey, HttpService])
       f       = access(sem, ref)
       destroy = closeAll(sem, ref)
     } yield Resource((f, destroy).pure[F])
