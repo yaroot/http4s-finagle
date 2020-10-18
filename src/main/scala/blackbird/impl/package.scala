@@ -2,7 +2,6 @@ package blackbird.impl
 
 import cats.effect._
 import cats.implicits._
-import cats.effect.interop.twitter.syntax._
 import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Response => FResponse}
 import com.twitter.finagle.{Service => Svc, http => FH}
 import com.twitter.io.{Buf, Pipe, Reader}
@@ -107,7 +106,8 @@ object Impl {
       }
       Future.value(fresp)
     } else {
-      unsafeReadBody[F](response.body).unsafeRunAsyncT
+      Effects
+        .unsafeRunAsync(unsafeReadBody[F](response.body))
         .map { content =>
           val fresp = FResponse()
           fresp.statusCode = response.status.code
@@ -126,30 +126,31 @@ object Impl {
       fromFinagleRequest(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
-          app
-            .run(req)
-            .unsafeRunAsyncT
+          Effects
+            .unsafeRunAsync(app.run(req))
             .flatMap(toFinagleResponse(_, streaming))
       }
     }
 
-  def mkClient[F[_]: ConcurrentEffect](service: Svc[FRequest, FResponse], streaming: Boolean): Client[F] = {
+  def mkClient[F[_]](service: Svc[FRequest, FResponse], streaming: Boolean)(implicit
+    F: ConcurrentEffect[F]
+  ): Client[F] = {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
-          ConcurrentEffect[F].delay(service(freq)).fromFuture
+          Effects.fromFuture(F.delay(service(freq)))
         }
         .flatMap(toHttp4sResponse(_))
     }
     Client { req: Request[F] =>
-      Resource.make(execute(req))(_ => ConcurrentEffect[F].unit)
+      Resource.make(execute(req))(_ => F.unit)
     }
   }
 
-  def mkServiceFactoryClient[F[_]: ConcurrentEffect](
+  def mkServiceFactoryClient[F[_]](
     serviceFactory: ClientFactory[F],
     streaming: Boolean
-  ): Client[F] = {
+  )(implicit F: ConcurrentEffect[F]): Client[F] = {
 
     val client = (req: Request[F]) => {
       val key = (req.uri.scheme, req.uri.authority).tupled
@@ -160,7 +161,7 @@ object Impl {
             .flatMap { svc =>
               fromHttp4sRequest(req, streaming)
                 .flatMap { r =>
-                  ConcurrentEffect[F].delay(svc(r)).fromFuture
+                  Effects.fromFuture(F.delay(svc(r)))
                 }
             }
             .flatMap(toHttp4sResponse(_))
@@ -202,11 +203,14 @@ object Impl {
 
   /** read body as a stream */
   def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
-    val pipe                                             = new Pipe[Buf]()
-    def writeToPipe(chunk: Chunk[Byte]): F[Future[Unit]] =
-      F.delay(pipe.write(chunk.toBuf))
-    val content                                          = body.chunks.evalMap(chunk => writeToPipe(chunk).fromFuture)
-    content.compile.drain.unsafeRunAsyncT.ensure { val _ = pipe.close() }
+    val pipe = new Pipe[Buf]()
+
+    val accu = body.chunks
+      .evalMap(chunk => Effects.fromFuture(F.delay(pipe.write(chunk.toBuf))))
+      .compile
+      .drain
+
+    Effects.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
     pipe
   }
 
@@ -227,7 +231,7 @@ object Impl {
           .foldLeft(Buf.Empty)(_.concat(_))
       }
       Stream
-        .eval(buf0.fromFuture)
+        .eval(Effects.fromFuture(buf0))
         .flatMap(_.liftBodyStream)
     }
   }
