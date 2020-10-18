@@ -1,24 +1,27 @@
 package blackbird
 
 import cats.data.Kleisli
-import cats.effect.{ConcurrentEffect, Resource, Sync}
-import com.twitter.finagle.{Http, Service}
+import cats.effect._
+import cats.effect.concurrent._
+import cats.implicits._
+import com.twitter.finagle.{Http, Service, http => FH}
 import org.http4s.Uri
 import org.http4s.client.Client
+import blackbird.impl.Impl
 
-object FinagleClient {
+object Blackbird {
   def apply[F[_]: ConcurrentEffect](
     service: Service[FH.Request, FH.Response],
     streaming: Boolean = true
   ): Client[F] =
-    Finagle.mkClient[F](service, streaming)
+    Impl.mkClient[F](service, streaming)
 
   def fromServiceFactory[F[_]: ConcurrentEffect](
     serviceFactory: Resource[F, ClientFactory[F]],
     streaming: Boolean = true
   ): Resource[F, Client[F]] =
     serviceFactory.map { factory =>
-      Finagle.mkServiceFactoryClient(factory, streaming)
+      Impl.mkServiceFactoryClient(factory, streaming)
     }
 }
 
