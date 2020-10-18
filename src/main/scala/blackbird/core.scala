@@ -1,11 +1,13 @@
 package blackbird
 
+import java.net.SocketAddress
+
 import cats.data.Kleisli
 import cats.effect._
 import cats.effect.concurrent._
 import cats.implicits._
-import com.twitter.finagle.{Http, Service, http => FH}
-import org.http4s.Uri
+import com.twitter.finagle.{Http, ListeningServer, Service, http => FH}
+import org.http4s.{HttpApp, Uri}
 import org.http4s.client.Client
 import blackbird.impl.Impl
 
@@ -23,6 +25,14 @@ object Blackbird {
     serviceFactory.map { factory =>
       Impl.mkServiceFactoryClient(factory, streaming)
     }
+
+  def serveRoutes[F[_]: ConcurrentEffect](addr: String, app: HttpApp[F], server: Http.Server): ListeningServer =
+    server.serve(addr, Impl.mkService[F](app, isStreaming(server)))
+
+  def serveRoutes[F[_]: ConcurrentEffect](addr: SocketAddress, app: HttpApp[F], server: Http.Server): ListeningServer =
+    server.serve(addr, Impl.mkService[F](app, isStreaming(server)))
+
+  def isStreaming(server: Http.Server): Boolean = server.params[FH.param.Streaming].enabled
 }
 
 object ClientFactory {
