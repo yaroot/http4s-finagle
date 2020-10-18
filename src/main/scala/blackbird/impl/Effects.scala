@@ -23,5 +23,18 @@ object Effects {
     }
   }
 
+  def unsafeRunAsync[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
+    val p = Promise[A]()
 
+    (F.runCancelable(f) _)
+      .andThen(_.map { cancel =>
+        p.setInterruptHandler {
+          case ex =>
+            p.updateIfEmpty(Throw(ex))
+            F.toIO(cancel).unsafeRunAsyncAndForget()
+        }
+      })(e => IO.delay(p.updateIfEmpty(e.fold(Throw(_), Return(_)))))
+
+    p
+  }
 }
