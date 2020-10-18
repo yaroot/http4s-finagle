@@ -14,7 +14,7 @@ object FinagleClient {
     Finagle.mkClient[F](service, streaming)
 
   def fromServiceFactory[F[_]: ConcurrentEffect](
-    serviceFactory: Resource[F, Factory[F]],
+    serviceFactory: Resource[F, ClientFactory[F]],
     streaming: Boolean = true
   ): Resource[F, Client[F]] =
     serviceFactory.map { factory =>
@@ -23,7 +23,7 @@ object FinagleClient {
 }
 
 object ClientFactory {
-  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): Factory[F] =
+  def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): ClientFactory[F] =
     Kleisli {
       case (scheme, authority) =>
         val dest    = authority.renderString
@@ -40,8 +40,8 @@ object ClientFactory {
     }
 
   def cachedFactory[F[_]](
-    factory: Factory[F]
-  )(implicit F: ConcurrentEffect[F]): F[Resource[F, Factory[F]]] = {
+    factory: ClientFactory[F]
+  )(implicit F: ConcurrentEffect[F]): F[Resource[F, ClientFactory[F]]] = {
     def access(sem: Semaphore[F], ref: Ref[F, Map[ClientKey, HttpService]]): Kleisli[F, ClientKey, HttpService] = {
       def get(key: ClientKey): F[Option[HttpService]] = ref.get.map(_.get(key))
       def create(key: ClientKey): F[HttpService] = {

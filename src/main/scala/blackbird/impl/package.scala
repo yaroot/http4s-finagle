@@ -11,7 +11,7 @@ import fs2.{Chunk, Stream}
 import io.chrisdavenport.vault.{Key, Vault}
 import org.http4s._
 import org.http4s.client.Client
-import blackbird
+import blackbird.ClientFactory
 
 import scala.reflect.ClassTag
 
@@ -24,7 +24,7 @@ object Ctx {
   }
 }
 
-object Finagle {
+object BlackbirdImpl {
   def isChunking(h: Header): Boolean =
     h match {
       case encoding: headers.`Transfer-Encoding` => encoding.hasChunked
@@ -148,7 +148,7 @@ object Finagle {
   }
 
   def mkServiceFactoryClient[F[_]: ConcurrentEffect](
-    serviceFactory: Factory[F],
+    serviceFactory: ClientFactory[F],
     streaming: Boolean
   ): Client[F] = {
 
