@@ -82,7 +82,7 @@ object ClientFactory {
         ref.get
           .map(_.values.toVector)
           .flatMap(
-            _.traverse(svc => Convertions.fromFuture(F.delay(svc.close())))
+            _.traverse(svc => Converter.fromFuture(F.delay(svc.close())))
           ) >> ref.set(Map.empty)
       }
 

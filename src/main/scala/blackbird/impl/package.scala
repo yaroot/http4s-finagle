@@ -106,7 +106,7 @@ object Impl {
       }
       Future.value(fresp)
     } else {
-      Convertions
+      Converter
         .unsafeRunAsync(unsafeReadBody[F](response.body))
         .map { content =>
           val fresp = FResponse()
@@ -126,7 +126,7 @@ object Impl {
       fromFinagleRequest(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
-          Convertions
+          Converter
             .unsafeRunAsync(app.run(req))
             .flatMap(toFinagleResponse(_, streaming))
       }
@@ -138,7 +138,7 @@ object Impl {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
-          Convertions.fromFuture(F.delay(service(freq)))
+          Converter.fromFuture(F.delay(service(freq)))
         }
         .flatMap(toHttp4sResponse(_))
     }
@@ -161,7 +161,7 @@ object Impl {
             .flatMap { svc =>
               fromHttp4sRequest(req, streaming)
                 .flatMap { r =>
-                  Convertions.fromFuture(F.delay(svc(r)))
+                  Converter.fromFuture(F.delay(svc(r)))
                 }
             }
             .flatMap(toHttp4sResponse(_))
@@ -192,7 +192,8 @@ object Impl {
     if (r.isChunked) {
       r.reader.collectBodyContent
     } else {
-      r.content.liftBodyStream
+      Converter.toFs2Stream(r.content)
+
     }
 
   /** read body as a Buf */
@@ -206,11 +207,11 @@ object Impl {
     val pipe = new Pipe[Buf]()
 
     val accu = body.chunks
-      .evalMap(chunk => Convertions.fromFuture(F.delay(pipe.write(chunk.toBuf))))
+      .evalMap(chunk => Converter.fromFuture(F.delay(pipe.write(chunk.toBuf))))
       .compile
       .drain
 
-    Convertions.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
+    Converter.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
     pipe
   }
 
@@ -231,17 +232,8 @@ object Impl {
           .foldLeft(Buf.Empty)(_.concat(_))
       }
       Stream
-        .eval(Convertions.fromFuture(buf0))
-        .flatMap(_.liftBodyStream)
+        .eval(Converter.fromFuture(buf0))
+        .flatMap(Converter.toFs2Stream[F])
     }
-  }
-
-  implicit class bufOps(private val buf: Buf) extends AnyVal {
-    def liftBodyStream[F[_]]: EntityBody[F] =
-      if (buf.isEmpty) Stream.empty.covary[F]
-      else {
-        val bytes = Buf.ByteArray.Shared.extract(buf)
-        Stream.chunk(Chunk.bytes(bytes)).covary[F]
-      }
   }
 }

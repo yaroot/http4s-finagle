@@ -8,7 +8,7 @@ import fs2.{Chunk, Stream}
 
 import scala.concurrent.duration.FiniteDuration
 
-object Convertions {
+object Converter {
   def fromFuture[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
     f.flatMap { future =>
       future.poll match {
