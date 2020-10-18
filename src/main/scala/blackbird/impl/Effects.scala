@@ -4,13 +4,15 @@ import cats.effect._
 import cats.implicits._
 import com.twitter.util._
 
+import scala.concurrent.duration.FiniteDuration
+
 object Effects {
   def fromFuture[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
     f.flatMap { future =>
       future.poll match {
         case Some(Return(a)) => F.pure(a)
         case Some(Throw(e))  => F.raiseError(e)
-        case None =>
+        case None            =>
           F.cancelable { cb =>
             val _ = future.respond {
               case Return(a) => cb(a.asRight)
@@ -28,13 +30,14 @@ object Effects {
 
     (F.runCancelable(f) _)
       .andThen(_.map { cancel =>
-        p.setInterruptHandler {
-          case ex =>
-            p.updateIfEmpty(Throw(ex))
-            F.toIO(cancel).unsafeRunAsyncAndForget()
+        p.setInterruptHandler { case ex =>
+          p.updateIfEmpty(Throw(ex))
+          F.toIO(cancel).unsafeRunAsyncAndForget()
         }
       })(e => IO.delay(p.updateIfEmpty(e.fold(Throw(_), Return(_)))))
 
     p
   }
+
+  def duration(d: FiniteDuration): Duration = Duration(d.length, d.unit)
 }
