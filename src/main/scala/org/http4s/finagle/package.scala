@@ -64,23 +64,24 @@ object Finagle {
     response: FResponse
   ): F[Response[F]] = {
     val resp = for {
-      statusCode <- Status.fromInt(response.statusCode)
+      statusCode  <- Status.fromInt(response.statusCode)
       headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       httpVersion = toHVersion(response.version)
-    } yield Response[F](
-      statusCode,
-      httpVersion,
-      Headers(headers),
-      liftMessageBody(response)
-    )
+    } yield
+      Response[F](
+        statusCode,
+        httpVersion,
+        Headers(headers),
+        liftMessageBody(response)
+      )
 
     ConcurrentEffect[F].fromEither(resp)
   }
 
   def fromFinagleRequest[F[_]: ConcurrentEffect](req: FRequest): Either[ParseFailure, Request[F]] =
     for {
-      method      <- Method.fromString(req.method.name)
-      uri         <- Uri.fromString(req.uri)
+      method       <- Method.fromString(req.method.name)
+      uri          <- Uri.fromString(req.uri)
       headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       version      = toHVersion(req.version)
       twitterLocal = Local.save()
@@ -124,7 +125,7 @@ object Finagle {
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       fromFinagleRequest(freq) match {
-        case Left(exc)  => Future.exception[FResponse](exc)
+        case Left(exc) => Future.exception[FResponse](exc)
         case Right(req) =>
           app
             .run(req)
@@ -164,7 +165,7 @@ object Finagle {
                 }
             }
             .flatMap(toHttp4sResponse(_))
-        case None    =>
+        case None =>
           Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
     }
@@ -202,10 +203,10 @@ object Finagle {
 
   /** read body as a stream */
   def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
-    val pipe                                             = new Pipe[Buf]()
+    val pipe = new Pipe[Buf]()
     def writeToPipe(chunk: Chunk[Byte]): F[Future[Unit]] =
       F.delay(pipe.write(chunk.toBuf))
-    val content                                          = body.chunks.evalMap(chunk => writeToPipe(chunk).fromFuture)
+    val content = body.chunks.evalMap(chunk => writeToPipe(chunk).fromFuture)
     content.compile.drain.unsafeRunAsyncT.ensure { val _ = pipe.close() }
     pipe
   }
@@ -219,8 +220,8 @@ object Finagle {
 
   implicit class readerOps[A](private val reader: Reader[A]) extends AnyVal {
     def collectBodyContent[F[_]](implicit F: ConcurrentEffect[F], ev: A =:= Buf): EntityBody[F] = {
-      val _    = ev
-      val r    = reader.asInstanceOf[Reader[Buf]]
+      val _ = ev
+      val r = reader.asInstanceOf[Reader[Buf]]
       val buf0 = F.delay {
         Reader
           .toAsyncStream(r)
