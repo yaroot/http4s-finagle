@@ -138,7 +138,7 @@ object Impl {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
-          Converters.fromFuture(F.delay(service(freq)))
+          FromFinagle.future(F.delay(service(freq)))
         }
         .flatMap(toHttp4sResponse(_))
     }
@@ -161,7 +161,7 @@ object Impl {
             .flatMap { svc =>
               fromHttp4sRequest(req, streaming)
                 .flatMap { r =>
-                  Converters.fromFuture(F.delay(svc(r)))
+                  FromFinagle.future(F.delay(svc(r)))
                 }
             }
             .flatMap(toHttp4sResponse(_))
@@ -197,12 +197,12 @@ object Impl {
     val accu =
       body.chunks
         .evalMap { chunk =>
-          Converters.fromFuture(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
+          FromFinagle.future(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
         }
         .compile
         .drain
 
-    val close = Converters.fromFuture(F.delay(pipe.close()))
+    val close = FromFinagle.future(F.delay(pipe.close()))
 
     Converters.unsafeRunAsync(F.guarantee(accu)(close))
     pipe
@@ -219,28 +219,11 @@ object Impl {
         .map(_.result())
     }
 
-    Converters.fromFuture(result)
+    FromFinagle.future(result)
   }
 }
 
 object Converters {
-  def fromFuture[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
-    f.flatMap { future =>
-      future.poll match {
-        case Some(Return(a)) => F.pure(a)
-        case Some(Throw(e))  => F.raiseError(e)
-        case None            =>
-          F.cancelable { cb =>
-            val _ = future.respond {
-              case Return(a) => cb(a.asRight)
-              case Throw(e)  => cb(e.asLeft)
-            }
-
-            F.uncancelable(F.delay(future.raise(new FutureCancelledException)))
-          }
-      }
-    }
-  }
 
   def unsafeRunAsync[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
     val p = Promise[A]()
@@ -277,6 +260,23 @@ object FromFinagle {
       case x                 => HttpVersion(x.major, x.minor)
     }
 
+  def future[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
+    f.flatMap { future =>
+      future.poll match {
+        case Some(Return(a)) => F.pure(a)
+        case Some(Throw(e))  => F.raiseError(e)
+        case None            =>
+          F.cancelable { cb =>
+            val _ = future.respond {
+              case Return(a) => cb(a.asRight)
+              case Throw(e)  => cb(e.asLeft)
+            }
+
+            F.uncancelable(F.delay(future.raise(new FutureCancelledException)))
+          }
+      }
+    }
+  }
 }
 
 object ToFinagle {
