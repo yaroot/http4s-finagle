@@ -10,6 +10,8 @@ import org.http4s.client.blaze.BlazeClientBuilder
 import scala.concurrent.ExecutionContext
 
 trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
+  override def munitExecutionContext: ExecutionContext = ExecutionContext.global
+
   val server = Blackbird.serveRoutes[IO](
     "localhost:0",
     TestRoutes.routes[IO],

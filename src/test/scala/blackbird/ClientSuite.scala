@@ -9,6 +9,8 @@ import org.http4s.server.blaze.BlazeServerBuilder
 import scala.concurrent.ExecutionContext
 
 trait ClientSuite extends munit.CatsEffectSuite with RouteSuite {
+  override def munitExecutionContext: ExecutionContext = ExecutionContext.global
+
   val (server, shutdownServer) =
     BlazeServerBuilder[IO](ExecutionContext.global)
       .withHttpApp(TestRoutes.routes[IO])
