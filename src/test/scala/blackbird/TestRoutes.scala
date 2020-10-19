@@ -1,5 +1,7 @@
 package blackbird
 
+import java.util.concurrent.Executors
+
 import cats.data.Kleisli
 import cats.effect._
 import cats.implicits._
@@ -8,6 +10,7 @@ import fs2.Stream
 import munit.FunSuite
 import org.http4s.client.Client
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 
 object TestRoutes {
@@ -45,6 +48,8 @@ object TestRoutes {
     println(("<-- rep", rep))
     rep
   }
+
+  val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4))
 }
 
 trait RouteSuite { self: FunSuite =>

@@ -10,7 +10,7 @@ import org.http4s.client.blaze.BlazeClientBuilder
 import scala.concurrent.ExecutionContext
 
 trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
-  override def munitExecutionContext: ExecutionContext = ExecutionContext.global
+  override def munitExecutionContext: ExecutionContext = TestRoutes.executionContext
 
   val server = Blackbird.serveRoutes[IO](
     "localhost:0",
@@ -24,7 +24,7 @@ trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
 
   val port: Int                = server.boundAddress.asInstanceOf[InetSocketAddress].getPort
   val address: String          = s"http://localhost:${port}"
-  val (client, shutdownClient) = BlazeClientBuilder[IO](ExecutionContext.global).resource.allocated.unsafeRunSync()
+  val (client, shutdownClient) = BlazeClientBuilder[IO](TestRoutes.executionContext).resource.allocated.unsafeRunSync()
 
   override def afterAll(): Unit = {
     Await.result(server.close())
