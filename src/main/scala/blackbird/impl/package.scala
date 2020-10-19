@@ -84,7 +84,7 @@ object Impl {
         uri = uri,
         httpVersion = version,
         headers = Headers(headers),
-        body = liftMessageBody[F](req),
+        body = FromFinagle.body[F](req),
         attributes = Vault.empty.insert(Ctx.Keys.local, twitterLocal)
       )
     }
