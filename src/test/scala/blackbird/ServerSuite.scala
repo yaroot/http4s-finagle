@@ -18,9 +18,8 @@ trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
   )
   def makeServer: finagle.Http.Server
 
-  val port: Int       = server.boundAddress.asInstanceOf[InetSocketAddress].getPort
-  val address: String = s"http://localhost:${port}"
-
+  val port: Int                = server.boundAddress.asInstanceOf[InetSocketAddress].getPort
+  val address: String          = s"http://localhost:${port}"
   val (client, shutdownClient) = BlazeClientBuilder[IO](ExecutionContext.global).resource.allocated.unsafeRunSync()
 
   override def afterAll(): Unit = {
