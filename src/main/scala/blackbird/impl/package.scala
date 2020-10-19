@@ -46,15 +46,16 @@ object Impl {
     }
 
     if (streaming) {
-      val freq = FRequest(version, method, uri, unsafeReadBodyStream(req.body))
-      setHeaders(freq, req.headers)
-      freq.pure[F]
+      ToFinagle.streamBody(req.body).map { body =>
+        val r = FRequest(version, method, uri, body)
+        setHeaders(r, req.headers)
+        r
+      }
     } else {
-      val body = unsafeReadBody(req.body)
-      body.map { buf =>
-        val freq = FRequest(version, method, uri)
-        freq.content = buf
-        setHeaders(freq, req.headers.filter(!isChunking(_)))
+      ToFinagle.accumulateAll(req.body).map { body =>
+        val r = FRequest(version, method, uri)
+        r.content = body
+        setHeaders(r, req.headers.filter(!isChunking(_)))
       }
     }
   }
@@ -290,4 +291,31 @@ object ToFinagle {
 
     p
   }
+
+  def streamBody[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): F[Reader[Buf]] = {
+    if (body == EmptyBody) Reader.empty[Buf].pure[F]
+    else {
+      F.delay {
+        val pipe = new Pipe[Buf]()
+
+        val accu =
+          body.chunks
+            .evalMap { chunk =>
+              FromFinagle.future(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
+            }
+            .compile
+            .drain
+
+        val close = FromFinagle.future(F.delay(pipe.close()))
+
+        ToFinagle.asyncEval(F.guarantee(accu)(close))
+        pipe
+      }
+    }
+  }
+
+  def accumulateAll[F[_]: ConcurrentEffect](body: Stream[F, Byte]): F[Buf] =
+    body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
+      accu.concat(ToFinagle.toBuf(chunk))
+    }
 }
