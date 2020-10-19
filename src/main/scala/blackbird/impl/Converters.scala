@@ -50,4 +50,8 @@ object Converters {
       Stream.chunk(Chunk.bytes(bytes)).covary[F]
     }
   }
+
+  def toBuf(chunk: Chunk[Byte]): Buf = {
+    Buf.ByteArray.Owned(chunk.toArray)
+  }
 }

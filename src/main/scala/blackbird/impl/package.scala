@@ -6,13 +6,11 @@ import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Respo
 import com.twitter.finagle.{Service => Svc, http => FH}
 import com.twitter.io.{Buf, Pipe, Reader}
 import com.twitter.util._
-import fs2.{Chunk, Stream}
+import fs2.Stream
 import io.chrisdavenport.vault.{Key, Vault}
 import org.http4s._
 import org.http4s.client.Client
 import blackbird.ClientFactory
-
-import scala.reflect.ClassTag
 
 object Ctx {
   def restore[F[_]](req: Request[F]): Unit =
@@ -199,27 +197,25 @@ object Impl {
   /** read body as a Buf */
   def unsafeReadBody[F[_]: ConcurrentEffect](body: EntityBody[F]): F[Buf] =
     body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
-      accu.concat(chunk.toBuf)
+      accu.concat(Converters.toBuf(chunk))
     }
 
   /** read body as a stream */
   def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
     val pipe = new Pipe[Buf]()
 
-    val accu = body.chunks
-      .evalMap(chunk => Converters.fromFuture(F.delay(pipe.write(chunk.toBuf))))
-      .compile
-      .drain
+    val accu =
+      body.chunks
+        .evalMap { chunk =>
+          Converters.fromFuture(F.delay(pipe.write(Converters.toBuf(chunk))))
+        }
+        .compile
+        .drain
 
-    Converters.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
+    val close = Converters.fromFuture(F.delay(pipe.close()))
+
+    Converters.unsafeRunAsync(F.guarantee(accu)(close))
     pipe
-  }
-
-  implicit class chunkOps[A](private val chunk: Chunk[A]) extends AnyVal {
-    def toBuf(implicit ct: ClassTag[A], ev: A =:= Byte): Buf = {
-      val _ = ev
-      Buf.ByteArray.Owned(chunk.toArray.asInstanceOf[Array[Byte]])
-    }
   }
 
   implicit class readerOps[A](private val reader: Reader[A]) extends AnyVal {
