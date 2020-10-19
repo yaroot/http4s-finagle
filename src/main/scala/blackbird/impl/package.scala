@@ -273,21 +273,19 @@ object Converters {
 
     p
   }
-
-  def buf2Stream[F[_]](buf: Buf): Stream[F, Byte] = {
-    if (buf.isEmpty) Stream.empty.covary[F]
-    else {
-      val bytes = Buf.ByteArray.Shared.extract(buf)
-      Stream.chunk(Chunk.bytes(bytes)).covary[F]
-    }
-  }
-
 }
 
 object FromFinagle {
   def toChunk(buf: Buf): Chunk[Byte] = {
     val bs = Buf.ByteArray.Shared.extract(buf)
     Chunk.bytes(bs)
+  }
+
+  def toStream[F[_]](chunks: Vector[Chunk[Byte]]): Stream[F, Byte] = {
+    Stream
+      .emits(chunks)
+      .flatMap(Stream.chunk)
+      .covary[F]
   }
 }
 
