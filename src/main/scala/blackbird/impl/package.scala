@@ -274,7 +274,6 @@ object Converters {
     p
   }
 
-
   def buf2Stream[F[_]](buf: Buf): Stream[F, Byte] = {
     if (buf.isEmpty) Stream.empty.covary[F]
     else {
