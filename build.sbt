@@ -29,6 +29,7 @@ scalafmtOnCompile := true
 cancelable in Global := true
 testFrameworks += new TestFramework("munit.Framework")
 parallelExecution in Test := false
+fork in Test := true
 
 version ~= (_.replace('+', '-'))
 dynver ~= (_.replace('+', '-'))

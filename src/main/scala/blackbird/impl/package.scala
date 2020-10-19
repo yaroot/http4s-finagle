@@ -122,6 +122,7 @@ object Impl {
 
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
+      println(freq -> streaming)
       fromFinagleRequest(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
