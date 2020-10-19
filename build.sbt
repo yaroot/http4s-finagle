@@ -13,6 +13,7 @@ libraryDependencies ++= {
     "org.http4s"    %% "http4s-server"       % Http4sVersion,
     "com.twitter"   %% "finagle-http"        % FinagleVersion,
     "org.http4s"    %% "http4s-blaze-client" % Http4sVersion % Test,
+    "org.http4s"    %% "http4s-blaze-server" % Http4sVersion % Test,
     "org.http4s"    %% "http4s-circe"        % Http4sVersion % Test,
     "org.http4s"    %% "http4s-dsl"          % Http4sVersion % Test,
     "org.http4s"    %% "http4s-testing"      % Http4sVersion % Test,
