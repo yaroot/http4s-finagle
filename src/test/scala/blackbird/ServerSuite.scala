@@ -4,7 +4,6 @@ import java.net.InetSocketAddress
 
 import cats.effect._
 import com.twitter.finagle
-import com.twitter.finagle.Http
 import com.twitter.util.{Await, Duration}
 import org.http4s.client.blaze.BlazeClientBuilder
 
