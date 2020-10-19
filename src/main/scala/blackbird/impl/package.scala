@@ -92,14 +92,16 @@ object Impl {
   // TODO restore Finagle Contexts
   def toFinagleResponse[F[_]: ConcurrentEffect](response: Response[F], streaming: Boolean): Future[FResponse] =
     if (streaming && response.headers.exists(FromFinagle.isChunking)) {
-      val reader  = unsafeReadBodyStream(response.body)
-      val version = ToFinagle.version(response.httpVersion)
-      val status  = FH.Status.fromCode(response.status.code)
-      val r   = FResponse(version, status, reader)
-      response.headers.foreach { h =>
-        val _ = r.headerMap.set(h.name.value, h.value)
+      val resp = ToFinagle.streamBody(response.body).map { body =>
+        val version = ToFinagle.version(response.httpVersion)
+        val status  = FH.Status.fromCode(response.status.code)
+        val r       = FResponse(version, status, body)
+        response.headers.foreach { h =>
+          val _ = r.headerMap.set(h.name.value, h.value)
+        }
+        r
       }
-      Future.value(r)
+      ToFinagle.asyncEval(resp)
     } else {
       ToFinagle
         .asyncEval(ToFinagle.accumulateAll(response.body))
@@ -258,6 +260,7 @@ object FromFinagle {
       Stream.chunk(FromFinagle.toChunk(r.content)).covary[F]
     }
   }
+
 }
 
 object ToFinagle {
@@ -316,4 +319,20 @@ object ToFinagle {
       accu.concat(ToFinagle.toBuf(chunk))
     }
 
+  def streamingBody[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
+    val pipe = new Pipe[Buf]()
+
+    val piping =
+      body.chunks
+        .evalMap { chunk =>
+          FromFinagle.future(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
+        }
+        .compile
+        .drain
+
+    val close = FromFinagle.future(F.delay(pipe.close()))
+
+    ToFinagle.asyncEval(F.guarantee(piping)(close))
+    pipe
+  }
 }
