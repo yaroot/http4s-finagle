@@ -14,7 +14,7 @@ import blackbird.impl._
 object Blackbird {
   def apply[F[_]: ConcurrentEffect](
     service: Service[FH.Request, FH.Response],
-    streaming: Boolean = true
+    streaming: Boolean
   ): Client[F] =
     Impl.mkClient[F](service, streaming)
 
