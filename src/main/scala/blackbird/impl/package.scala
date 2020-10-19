@@ -24,123 +24,28 @@ object Ctx {
 }
 
 object Impl {
-  def fromHttp4sRequest[F[_]: ConcurrentEffect](req: Request[F], streaming: Boolean): F[FRequest] = {
-    val version = ToFinagle.version(req.httpVersion)
-    val method  = FH.Method(req.method.name)
-    val uri     = req.uri.copy(scheme = None, authority = None).withoutFragment.renderString
-
-    val host = req.uri.authority.map(_.host.value)
-
-    def setHeaders(r: FRequest, headers: Headers): FRequest = {
-      headers.foreach { h =>
-        val _ = r.headerMap.add(h.name.value, h.value)
-      }
-      host.foreach(r.headerMap.add("Host", _))
-      r
-    }
-
-    if (streaming) {
-      ToFinagle.streamBody(req.body).map { body =>
-        val r = FRequest(version, method, uri, body)
-        setHeaders(r, req.headers)
-        r
-      }
-    } else {
-      ToFinagle.accumulateAll(req.body).map { body =>
-        val r = FRequest(version, method, uri)
-        r.content = body
-        setHeaders(r, req.headers.filter(!FromFinagle.isChunking(_)))
-      }
-    }
-  }
-
-  def toHttp4sResponse[F[_]: ConcurrentEffect](
-    response: FResponse
-  ): F[Response[F]] = {
-    val resp = for {
-      statusCode <- Status.fromInt(response.statusCode)
-      headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      httpVersion = FromFinagle.version(response.version)
-    } yield Response[F](
-      statusCode,
-      httpVersion,
-      Headers(headers),
-      FromFinagle.body(response)
-    )
-
-    ConcurrentEffect[F].fromEither(resp)
-  }
-
-  def fromFinagleRequest[F[_]: ConcurrentEffect](req: FRequest): Either[ParseFailure, Request[F]] =
-    for {
-      method      <- Method.fromString(req.method.name)
-      uri         <- Uri.fromString(req.uri)
-      headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      version      = FromFinagle.version(req.version)
-      twitterLocal = Local.save()
-    } yield {
-      Request[F](
-        method = method,
-        uri = uri,
-        httpVersion = version,
-        headers = Headers(headers),
-        body = FromFinagle.body[F](req),
-        attributes = Vault.empty.insert(Ctx.Keys.local, twitterLocal)
-      )
-    }
-
-  // TODO restore Finagle Contexts
-  def toFinagleResponse[F[_]: ConcurrentEffect](response: Response[F], streaming: Boolean): Future[FResponse] =
-    if (streaming && response.headers.exists(FromFinagle.isChunking)) {
-      val resp = ToFinagle.streamBody(response.body).map { body =>
-        val version = ToFinagle.version(response.httpVersion)
-        val status  = FH.Status.fromCode(response.status.code)
-        val r       = FResponse(version, status, body)
-        response.headers.foreach { h =>
-          val _ = r.headerMap.set(h.name.value, h.value)
-        }
-        r
-      }
-      ToFinagle.asyncEval(resp)
-    } else {
-      ToFinagle
-        .asyncEval(ToFinagle.accumulateAll(response.body))
-        .map { content =>
-          val r = FResponse()
-          r.statusCode = response.status.code
-          r.content = content
-          // header op: set content-length, remove chunked transfer
-          r.headerMap.set("Content-Length", content.length.toString)
-          response.headers.foreach { header =>
-            if (!FromFinagle.isChunking(header)) {
-              val _ = r.headerMap.set(header.name.value, header.value)
-            }
-          }
-          r
-        }
-    }
 
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       println(freq -> streaming)
-      fromFinagleRequest(freq) match {
+      FromFinagle.request(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
           ToFinagle
             .asyncEval(app.run(req))
-            .flatMap(toFinagleResponse(_, streaming))
+            .flatMap(ToFinagle.response(_, streaming))
       }
     }
 
   def mkClient[F[_]](service: Svc[FRequest, FResponse], streaming: Boolean)(implicit
     F: ConcurrentEffect[F]
   ): Client[F] = {
-    val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
-      fromHttp4sRequest(req, streaming)
-        .flatMap { freq =>
-          FromFinagle.future(F.delay(service(freq)))
-        }
-        .flatMap(toHttp4sResponse(_))
+    val execute = { req: Request[F] =>
+      for {
+        freq  <- ToFinagle.request(req, streaming)
+        fresp <- FromFinagle.future(F.delay(service(freq)))
+        resp  <- FromFinagle.response(fresp)
+      } yield resp
     }
     Client { req: Request[F] =>
       Resource.make(execute(req))(_ => F.unit)
@@ -159,36 +64,19 @@ object Impl {
           serviceFactory
             .run(k)
             .flatMap { svc =>
-              fromHttp4sRequest(req, streaming)
+              ToFinagle
+                .request(req, streaming)
                 .flatMap { r =>
                   FromFinagle.future(F.delay(svc(r)))
                 }
             }
-            .flatMap(toHttp4sResponse(_))
+            .flatMap(FromFinagle.response(_))
         case None    =>
           Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
     }
 
     Client(r => Resource.liftF(client(r)))
-  }
-
-  /** read body as a stream */
-  def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
-    val pipe = new Pipe[Buf]()
-
-    val accu =
-      body.chunks
-        .evalMap { chunk =>
-          FromFinagle.future(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
-        }
-        .compile
-        .drain
-
-    val close = FromFinagle.future(F.delay(pipe.close()))
-
-    ToFinagle.asyncEval(F.guarantee(accu)(close))
-    pipe
   }
 }
 
@@ -262,6 +150,40 @@ object FromFinagle {
     }
   }
 
+  def response[F[_]: ConcurrentEffect](
+    resp: FResponse
+  ): F[Response[F]] = {
+    val r = for {
+      statusCode <- Status.fromInt(resp.statusCode)
+      headers     = resp.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
+      httpVersion = FromFinagle.version(resp.version)
+    } yield Response[F](
+      statusCode,
+      httpVersion,
+      Headers(headers),
+      FromFinagle.body(resp)
+    )
+
+    ConcurrentEffect[F].fromEither(r)
+  }
+
+  def request[F[_]: ConcurrentEffect](req: FRequest): Either[ParseFailure, Request[F]] =
+    for {
+      method      <- Method.fromString(req.method.name)
+      uri         <- Uri.fromString(req.uri)
+      headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
+      version      = FromFinagle.version(req.version)
+      twitterLocal = Local.save()
+    } yield {
+      Request[F](
+        method = method,
+        uri = uri,
+        httpVersion = version,
+        headers = Headers(headers),
+        body = FromFinagle.body[F](req),
+        attributes = Vault.empty.insert(Ctx.Keys.local, twitterLocal)
+      )
+    }
 }
 
 object ToFinagle {
@@ -315,7 +237,7 @@ object ToFinagle {
     }
   }
 
-  def accumulateAll[F[_]: ConcurrentEffect](body: Stream[F, Byte]): F[Buf] =
+  def accumulateAll[F[_]: ConcurrentEffect](body: Stream[F, Byte]): F[Buf]                       =
     body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
       accu.concat(ToFinagle.toBuf(chunk))
     }
@@ -336,4 +258,64 @@ object ToFinagle {
     ToFinagle.asyncEval(F.guarantee(piping)(close))
     pipe
   }
+
+  def request[F[_]: ConcurrentEffect](req: Request[F], streaming: Boolean): F[FRequest] = {
+    val version = ToFinagle.version(req.httpVersion)
+    val method  = FH.Method(req.method.name)
+    val uri     = req.uri.copy(scheme = None, authority = None).withoutFragment.renderString
+
+    val host = req.uri.authority.map(_.host.value)
+
+    def setHeaders(r: FRequest, headers: Headers): FRequest = {
+      headers.foreach { h =>
+        val _ = r.headerMap.add(h.name.value, h.value)
+      }
+      host.foreach(r.headerMap.add("Host", _))
+      r
+    }
+
+    if (streaming) {
+      ToFinagle.streamBody(req.body).map { body =>
+        val r = FRequest(version, method, uri, body)
+        setHeaders(r, req.headers)
+        r
+      }
+    } else {
+      ToFinagle.accumulateAll(req.body).map { body =>
+        val r = FRequest(version, method, uri)
+        r.content = body
+        setHeaders(r, req.headers.filter(!FromFinagle.isChunking(_)))
+      }
+    }
+  }
+  def response[F[_]: ConcurrentEffect](resp: Response[F], streaming: Boolean): Future[FResponse] =
+    if (streaming && resp.headers.exists(FromFinagle.isChunking)) {
+      val respf = ToFinagle.streamBody(resp.body).map { body =>
+        val version = ToFinagle.version(resp.httpVersion)
+        val status  = FH.Status.fromCode(resp.status.code)
+        val r       = FResponse(version, status, body)
+        resp.headers.foreach { h =>
+          val _ = r.headerMap.set(h.name.value, h.value)
+        }
+        r
+      }
+      ToFinagle.asyncEval(respf)
+    } else {
+      ToFinagle
+        .asyncEval(ToFinagle.accumulateAll(resp.body))
+        .map { content =>
+          val r = FResponse()
+          r.statusCode = resp.status.code
+          r.content = content
+          // header op: set content-length, remove chunked transfer
+          r.headerMap.set("Content-Length", content.length.toString)
+          resp.headers.foreach { header =>
+            if (!FromFinagle.isChunking(header)) {
+              val _ = r.headerMap.set(header.name.value, header.value)
+            }
+          }
+          r
+        }
+    }
+
 }
