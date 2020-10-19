@@ -71,7 +71,7 @@ object Impl {
       statusCode,
       httpVersion,
       Headers(headers),
-      liftMessageBody(response)
+      FromFinagle.body(response)
     )
 
     ConcurrentEffect[F].fromEither(resp)
@@ -177,7 +177,7 @@ object Impl {
   def liftMessageBody[F[_]: ConcurrentEffect](r: FMessage): EntityBody[F] =
     if (r.isChunked) {
       Stream
-        .eval(readAll[F](r.reader))
+        .eval(FromFinagle.readAll[F](r.reader))
         .flatMap { bufs =>
           FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
         }
@@ -207,20 +207,6 @@ object Impl {
 
     ToFinagle.asyncEval(F.guarantee(accu)(close))
     pipe
-  }
-
-  def readAll[F[_]](reader: Reader[Buf])(implicit F: ConcurrentEffect[F]): F[Vector[Buf]] = {
-    val accu   = Vector.newBuilder[Buf]
-    val result = F.delay {
-      Reader
-        .toAsyncStream(reader)
-        .foldLeft(accu) { (accu, b) =>
-          accu += b
-        }
-        .map(_.result())
-    }
-
-    FromFinagle.future(result)
   }
 }
 
@@ -259,6 +245,32 @@ object FromFinagle {
             F.uncancelable(F.delay(future.raise(new FutureCancelledException)))
           }
       }
+    }
+  }
+
+  def readAll[F[_]](reader: Reader[Buf])(implicit F: ConcurrentEffect[F]): F[Vector[Buf]] = {
+    val accu   = Vector.newBuilder[Buf]
+    val result = F.delay {
+      Reader
+        .toAsyncStream(reader)
+        .foldLeft(accu) { (accu, b) =>
+          accu += b
+        }
+        .map(_.result())
+    }
+
+    future(result)
+  }
+
+  def body[F[_]](r: FMessage)(implicit F: ConcurrentEffect[F]): Stream[F, Byte] = {
+    if (r.isChunked) {
+      Stream
+        .eval(FromFinagle.readAll[F](r.reader))
+        .flatMap { bufs =>
+          FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
+        }
+    } else {
+      Stream.chunk(FromFinagle.toChunk(r.content)).covary[F]
     }
   }
 }
@@ -318,4 +330,5 @@ object ToFinagle {
     body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
       accu.concat(ToFinagle.toBuf(chunk))
     }
+
 }
