@@ -63,24 +63,23 @@ object Impl {
     response: FResponse
   ): F[Response[F]] = {
     val resp = for {
-      statusCode  <- Status.fromInt(response.statusCode)
+      statusCode <- Status.fromInt(response.statusCode)
       headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       httpVersion = toHVersion(response.version)
-    } yield
-      Response[F](
-        statusCode,
-        httpVersion,
-        Headers(headers),
-        liftMessageBody(response)
-      )
+    } yield Response[F](
+      statusCode,
+      httpVersion,
+      Headers(headers),
+      liftMessageBody(response)
+    )
 
     ConcurrentEffect[F].fromEither(resp)
   }
 
   def fromFinagleRequest[F[_]: ConcurrentEffect](req: FRequest): Either[ParseFailure, Request[F]] =
     for {
-      method       <- Method.fromString(req.method.name)
-      uri          <- Uri.fromString(req.uri)
+      method      <- Method.fromString(req.method.name)
+      uri         <- Uri.fromString(req.uri)
       headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       version      = toHVersion(req.version)
       twitterLocal = Local.save()
@@ -107,7 +106,7 @@ object Impl {
       }
       Future.value(fresp)
     } else {
-      Converter
+      Converters
         .unsafeRunAsync(unsafeReadBody[F](response.body))
         .map { content =>
           val fresp = FResponse()
@@ -125,20 +124,21 @@ object Impl {
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       fromFinagleRequest(freq) match {
-        case Left(exc) => Future.exception[FResponse](exc)
+        case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
-          Converter
+          Converters
             .unsafeRunAsync(app.run(req))
             .flatMap(toFinagleResponse(_, streaming))
       }
     }
 
   def mkClient[F[_]](service: Svc[FRequest, FResponse], streaming: Boolean)(implicit
-                                                                            F: ConcurrentEffect[F]): Client[F] = {
+    F: ConcurrentEffect[F]
+  ): Client[F] = {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
-          Converter.fromFuture(F.delay(service(freq)))
+          Converters.fromFuture(F.delay(service(freq)))
         }
         .flatMap(toHttp4sResponse(_))
     }
@@ -161,11 +161,11 @@ object Impl {
             .flatMap { svc =>
               fromHttp4sRequest(req, streaming)
                 .flatMap { r =>
-                  Converter.fromFuture(F.delay(svc(r)))
+                  Converters.fromFuture(F.delay(svc(r)))
                 }
             }
             .flatMap(toHttp4sResponse(_))
-        case None =>
+        case None    =>
           Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
     }
@@ -192,7 +192,7 @@ object Impl {
     if (r.isChunked) {
       r.reader.collectBodyContent
     } else {
-      Converter.toFs2Stream(r.content)
+      Converters.toFs2Stream(r.content)
 
     }
 
@@ -207,11 +207,11 @@ object Impl {
     val pipe = new Pipe[Buf]()
 
     val accu = body.chunks
-      .evalMap(chunk => Converter.fromFuture(F.delay(pipe.write(chunk.toBuf))))
+      .evalMap(chunk => Converters.fromFuture(F.delay(pipe.write(chunk.toBuf))))
       .compile
       .drain
 
-    Converter.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
+    Converters.unsafeRunAsync(accu).ensure { val _ = pipe.close() }
     pipe
   }
 
@@ -224,16 +224,16 @@ object Impl {
 
   implicit class readerOps[A](private val reader: Reader[A]) extends AnyVal {
     def collectBodyContent[F[_]](implicit F: ConcurrentEffect[F], ev: A =:= Buf): EntityBody[F] = {
-      val _ = ev
-      val r = reader.asInstanceOf[Reader[Buf]]
+      val _    = ev
+      val r    = reader.asInstanceOf[Reader[Buf]]
       val buf0 = F.delay {
         Reader
           .toAsyncStream(r)
           .foldLeft(Buf.Empty)(_.concat(_))
       }
       Stream
-        .eval(Converter.fromFuture(buf0))
-        .flatMap(Converter.toFs2Stream[F])
+        .eval(Converters.fromFuture(buf0))
+        .flatMap(Converters.toFs2Stream[F])
     }
   }
 }
