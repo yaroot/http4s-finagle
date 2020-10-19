@@ -30,12 +30,14 @@ object Impl {
       val a = FromFinagle.request(freq)
 
       def run(req: Request[F]): Future[FResponse] = {
-        println(("req", req))
-        val resp = app.run(req).flatMap { rep =>
-          println(("rep", rep))
-          ToFinagle.response(rep, streaming)
-        }
-        ToFinagle.asyncEval(resp)
+        println("req" -> req)
+        val frep = for {
+          resp  <- app.run(req)
+          _      = println("resp" -> resp)
+          fresp <- ToFinagle.response(resp, streaming)
+          _      = println("fresp" -> fresp)
+        } yield fresp
+        ToFinagle.asyncEval(frep)
       }
 
       a.fold(Future.exception[FResponse](_), run)
@@ -212,7 +214,7 @@ object ToFinagle {
           p.updateIfEmpty(Throw(ex))
           F.toIO(cancel).unsafeRunAsyncAndForget()
         }
-      })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
+      })(e => IO.delay { println(e); val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
 
     p
   }
