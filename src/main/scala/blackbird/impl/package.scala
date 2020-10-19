@@ -65,7 +65,7 @@ object Impl {
     val resp = for {
       statusCode <- Status.fromInt(response.statusCode)
       headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      httpVersion = toHVersion(response.version)
+      httpVersion = FromFinagle.toVersion(response.version)
     } yield Response[F](
       statusCode,
       httpVersion,
@@ -81,7 +81,7 @@ object Impl {
       method      <- Method.fromString(req.method.name)
       uri         <- Uri.fromString(req.uri)
       headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      version      = toHVersion(req.version)
+      version      = FromFinagle.toVersion(req.version)
       twitterLocal = Local.save()
     } yield {
       Request[F](
@@ -181,22 +181,12 @@ object Impl {
       case x                      => FH.Version(x.major, x.minor)
     }
 
-  def toHVersion(ver: FH.Version): HttpVersion =
-    ver match {
-      case FH.Version.Http11 => HttpVersion.`HTTP/1.1`
-      case FH.Version.Http10 => HttpVersion.`HTTP/1.0`
-      case x                 => HttpVersion(x.major, x.minor)
-    }
-
   def liftMessageBody[F[_]: ConcurrentEffect](r: FMessage): EntityBody[F] =
     if (r.isChunked) {
       Stream
         .eval(readAll[F](r.reader))
         .flatMap { bufs =>
-          Stream
-            .emits(bufs)
-            .map(FromFinagle.toChunk)
-            .flatMap(Stream.chunk)
+          FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
         }
     } else {
       Stream.chunk(FromFinagle.toChunk(r.content)).covary[F]
@@ -287,6 +277,14 @@ object FromFinagle {
       .flatMap(Stream.chunk)
       .covary[F]
   }
+
+  def toVersion(ver: FH.Version): HttpVersion =
+    ver match {
+      case FH.Version.Http11 => HttpVersion.`HTTP/1.1`
+      case FH.Version.Http10 => HttpVersion.`HTTP/1.0`
+      case x                 => HttpVersion(x.major, x.minor)
+    }
+
 }
 
 object ToFinagle {
