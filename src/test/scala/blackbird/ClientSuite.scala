@@ -1,6 +1,5 @@
 package blackbird
 
-//import cats.implicits._
 import cats.effect._
 import com.twitter.finagle
 import com.twitter.finagle.http
