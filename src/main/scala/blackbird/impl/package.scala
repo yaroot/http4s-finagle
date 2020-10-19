@@ -106,8 +106,8 @@ object Impl {
       }
       Future.value(fresp)
     } else {
-      Converters
-        .unsafeRunAsync(unsafeReadBody[F](response.body))
+      ToFinagle
+        .asyncEval(unsafeReadBody[F](response.body))
         .map { content =>
           val fresp = FResponse()
           fresp.statusCode = response.status.code
@@ -126,8 +126,8 @@ object Impl {
       fromFinagleRequest(freq) match {
         case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
-          Converters
-            .unsafeRunAsync(app.run(req))
+          ToFinagle
+            .asyncEval(app.run(req))
             .flatMap(toFinagleResponse(_, streaming))
       }
     }
@@ -204,7 +204,7 @@ object Impl {
 
     val close = FromFinagle.future(F.delay(pipe.close()))
 
-    Converters.unsafeRunAsync(F.guarantee(accu)(close))
+    ToFinagle.asyncEval(F.guarantee(accu)(close))
     pipe
   }
 
@@ -220,23 +220,6 @@ object Impl {
     }
 
     FromFinagle.future(result)
-  }
-}
-
-object Converters {
-
-  def unsafeRunAsync[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
-    val p = Promise[A]()
-
-    (F.runCancelable(f) _)
-      .andThen(_.map { cancel =>
-        p.setInterruptHandler { case ex =>
-          p.updateIfEmpty(Throw(ex))
-          F.toIO(cancel).unsafeRunAsyncAndForget()
-        }
-      })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
-
-    p
   }
 }
 
@@ -294,4 +277,17 @@ object ToFinagle {
       case x                      => FH.Version(x.major, x.minor)
     }
 
+  def asyncEval[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
+    val p = Promise[A]()
+
+    (F.runCancelable(f) _)
+      .andThen(_.map { cancel =>
+        p.setInterruptHandler { case ex =>
+          p.updateIfEmpty(Throw(ex))
+          F.toIO(cancel).unsafeRunAsyncAndForget()
+        }
+      })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
+
+    p
+  }
 }
