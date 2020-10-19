@@ -24,17 +24,15 @@ object Ctx {
 }
 
 object Impl {
-
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       println(freq -> streaming)
-      FromFinagle.request(freq) match {
-        case Left(exc)  => Future.exception[FResponse](exc)
-        case Right(req) =>
-          ToFinagle
-            .asyncEval(app.run(req))
-            .flatMap(ToFinagle.response(_, streaming))
-      }
+      FromFinagle
+        .request(freq)
+        .fold(
+          ex => Future.exception[FResponse](ex),
+          req => ToFinagle.asyncEval(app.run(req)).flatMap(ToFinagle.response(_, streaming))
+        )
     }
 
   def mkClient[F[_]](service: Svc[FRequest, FResponse], streaming: Boolean)(implicit
