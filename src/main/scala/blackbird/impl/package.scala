@@ -95,24 +95,25 @@ object Impl {
       val reader  = unsafeReadBodyStream(response.body)
       val version = ToFinagle.version(response.httpVersion)
       val status  = FH.Status.fromCode(response.status.code)
-      val fresp   = FResponse(version, status, reader)
+      val r   = FResponse(version, status, reader)
       response.headers.foreach { h =>
-        val _ = fresp.headerMap.set(h.name.value, h.value)
+        val _ = r.headerMap.set(h.name.value, h.value)
       }
-      Future.value(fresp)
+      Future.value(r)
     } else {
       ToFinagle
-        .asyncEval(unsafeReadBody[F](response.body))
+        .asyncEval(ToFinagle.accumulateAll(response.body))
         .map { content =>
-          val fresp = FResponse()
-          fresp.statusCode = response.status.code
-          fresp.content = content
+          val r = FResponse()
+          r.statusCode = response.status.code
+          r.content = content
+          r.headerMap.set("Content-Length", content.length.toString)
           response.headers.foreach { header =>
             if (!FromFinagle.isChunking(header)) {
-              val _ = fresp.headerMap.set(header.name.value, header.value)
+              val _ = r.headerMap.set(header.name.value, header.value)
             }
           }
-          fresp
+          r
         }
     }
 
@@ -167,23 +168,6 @@ object Impl {
 
     Client(r => Resource.liftF(client(r)))
   }
-
-  def liftMessageBody[F[_]: ConcurrentEffect](r: FMessage): EntityBody[F] =
-    if (r.isChunked) {
-      Stream
-        .eval(FromFinagle.readAll[F](r.reader))
-        .flatMap { bufs =>
-          FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
-        }
-    } else {
-      Stream.chunk(FromFinagle.toChunk(r.content)).covary[F]
-    }
-
-  /** read body as a Buf */
-  def unsafeReadBody[F[_]: ConcurrentEffect](body: EntityBody[F]): F[Buf] =
-    body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
-      accu.concat(ToFinagle.toBuf(chunk))
-    }
 
   /** read body as a stream */
   def unsafeReadBodyStream[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): Reader[Buf] = {
