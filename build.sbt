@@ -27,8 +27,8 @@ addCompilerPlugin("com.github.cb372" % "scala-typed-holes" % "0.1.5" cross Cross
 
 scalafmtOnCompile := true
 cancelable in Global := true
-
 testFrameworks += new TestFramework("munit.Framework")
+parallelExecution in Test := false
 
 version ~= (_.replace('+', '-'))
 dynver ~= (_.replace('+', '-'))

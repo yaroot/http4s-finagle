@@ -5,6 +5,8 @@ import cats.effect._
 import cats.implicits._
 import org.http4s._
 import fs2.Stream
+import munit.FunSuite
+import org.http4s.client.Client
 
 import scala.concurrent.duration._
 
@@ -40,4 +42,72 @@ object TestRoutes {
         Response[F](Status.NotFound).pure[F]
     }
   }
+}
+
+trait RouteSuite { self: FunSuite =>
+  def address: String
+  def client: Client[IO]
+
+  def checkExpected(path: String, expected: String): IO[Unit] = {
+    client.expect[String](s"$address$path").map { got =>
+      assertEquals(got, expected)
+    }
+  }
+
+  def request(method: Method, path: String): Request[IO] = Request[IO](
+    method = method,
+    uri = Uri.unsafeFromString(s"$address$path")
+  )
+
+  test(s"GET ${TestRoutes.SimplePath}") {
+    checkExpected(TestRoutes.SimplePath, "simple path")
+  }
+
+  test(s"GET ${TestRoutes.ChunkedPath} ") {
+    checkExpected(TestRoutes.ChunkedPath, "chunk")
+  }
+
+  test(s"GET ${TestRoutes.DelayedPath}") {
+    checkExpected(TestRoutes.DelayedPath, "delayed path")
+  }
+
+  test(s"GET ${TestRoutes.NoContentPath}") {
+    checkExpected(TestRoutes.NoContentPath, "")
+  }
+
+  test(s"GET ${TestRoutes.EmptyNotFoundPath}") {
+    client
+      .status(request(Method.GET, TestRoutes.EmptyNotFoundPath))
+      .map(st => assertEquals(st, Status.NotFound))
+  }
+
+  test(s"GET ${TestRoutes.NotFoundPath}") {
+    val f = for {
+      resp <- Stream.resource(client.run(request(Method.GET, TestRoutes.NotFoundPath)))
+      _     = assertEquals(resp.status, Status.NotFound)
+      body <- resp.bodyText
+      _     = assertEquals(body, "not found")
+    } yield ()
+    f.compile.drain
+  }
+
+  test(s"PUT ${TestRoutes.EchoPath}") {
+    client
+      .expect[String](
+        request(Method.PUT, TestRoutes.EchoPath).withEntity("put request")
+      )
+      .map(body => assertEquals(body, "put request"))
+  }
+
+  test(s"PUT ${TestRoutes.EchoPath} (chunked)") {
+    client
+      .expect[String](
+        request(Method.PUT, TestRoutes.EchoPath)
+          .withEntity(Stream.emits("chunk".toSeq.map(_.toString)).covary[IO])
+      )
+      .map { body =>
+        assertEquals(body, "chunk")
+      }
+  }
+
 }
