@@ -24,12 +24,6 @@ object Ctx {
 }
 
 object Impl {
-  def isChunking(h: Header): Boolean =
-    h match {
-      case encoding: headers.`Transfer-Encoding` => encoding.hasChunked
-      case _                                     => false
-    }
-
   def fromHttp4sRequest[F[_]: ConcurrentEffect](req: Request[F], streaming: Boolean): F[FRequest] = {
     val version = ToFinagle.version(req.httpVersion)
     val method  = FH.Method(req.method.name)
@@ -55,7 +49,7 @@ object Impl {
       ToFinagle.accumulateAll(req.body).map { body =>
         val r = FRequest(version, method, uri)
         r.content = body
-        setHeaders(r, req.headers.filter(!isChunking(_)))
+        setHeaders(r, req.headers.filter(!FromFinagle.isChunking(_)))
       }
     }
   }
@@ -97,7 +91,7 @@ object Impl {
 
   // TODO restore Finagle Contexts
   def toFinagleResponse[F[_]: ConcurrentEffect](response: Response[F], streaming: Boolean): Future[FResponse] =
-    if (streaming && response.headers.exists(isChunking)) {
+    if (streaming && response.headers.exists(FromFinagle.isChunking)) {
       val reader  = unsafeReadBodyStream(response.body)
       val version = ToFinagle.version(response.httpVersion)
       val status  = FH.Status.fromCode(response.status.code)
@@ -114,7 +108,7 @@ object Impl {
           fresp.statusCode = response.status.code
           fresp.content = content
           response.headers.foreach { header =>
-            if (!isChunking(header)) {
+            if (!FromFinagle.isChunking(header)) {
               val _ = fresp.headerMap.set(header.name.value, header.value)
             }
           }
@@ -211,6 +205,12 @@ object Impl {
 }
 
 object FromFinagle {
+  def isChunking(h: Header): Boolean =
+    h match {
+      case encoding: headers.`Transfer-Encoding` => encoding.hasChunked
+      case _                                     => false
+    }
+
   def toChunk(buf: Buf): Chunk[Byte] = {
     val bs = Buf.ByteArray.Shared.extract(buf)
     Chunk.bytes(bs)
