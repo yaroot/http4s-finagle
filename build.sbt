@@ -5,16 +5,16 @@ crossScalaVersions := Seq("2.12.11", "2.13.3")
 
 scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings")
 
-resolvers += "gh-maven" at "https://yaroot.github.io/packages/maven2"
+/* resolvers += "gh-maven" at "https://yaroot.github.io/packages/maven2" */
 
 libraryDependencies ++= {
   val FinagleVersion           = "20.9.0"
   val Http4sVersion            = "0.21.8"
   val Slf4jVersion             = "1.7.30"
-  val CatsEffectTwitterVersion = "0.1.8"
+  /* val CatsEffectTwitterVersion = "0.1.8" */
 
   Seq(
-    "com.github.yaroot" %% "cats-effect-interop-twitter"  % CatsEffectTwitterVersion,
+    /* "com.github.yaroot" %% "cats-effect-interop-twitter"  % CatsEffectTwitterVersion, */
     "org.http4s"        %% "http4s-client"                % Http4sVersion,
     "org.http4s"        %% "http4s-server"                % Http4sVersion,
     "com.twitter"       %% "finagle-http"                 % FinagleVersion,

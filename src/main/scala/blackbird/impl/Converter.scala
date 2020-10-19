@@ -14,7 +14,7 @@ object Converter {
       future.poll match {
         case Some(Return(a)) => F.pure(a)
         case Some(Throw(e))  => F.raiseError(e)
-        case None            =>
+        case None =>
           F.cancelable { cb =>
             val _ = future.respond {
               case Return(a) => cb(a.asRight)
@@ -32,9 +32,10 @@ object Converter {
 
     (F.runCancelable(f) _)
       .andThen(_.map { cancel =>
-        p.setInterruptHandler { case ex =>
-          p.updateIfEmpty(Throw(ex))
-          F.toIO(cancel).unsafeRunAsyncAndForget()
+        p.setInterruptHandler {
+          case ex =>
+            p.updateIfEmpty(Throw(ex))
+            F.toIO(cancel).unsafeRunAsyncAndForget()
         }
       })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
 
