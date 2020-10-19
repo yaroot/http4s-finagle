@@ -11,12 +11,16 @@ import org.http4s.client.blaze.BlazeClientBuilder
 import scala.concurrent.ExecutionContext
 
 trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
-  val server = Blackbird.serveRoutes[IO](
+  val server                          = Blackbird.serveRoutes[IO](
     "localhost:0",
     TestRoutes.routes[IO],
     makeServer
   )
-  def makeServer: finagle.Http.Server
+  def makeServer: finagle.Http.Server =
+    finagle.Http.server
+      .withRequestTimeout(Duration.fromSeconds(3))
+      .withStreaming(streamingToggle)
+  def streamingToggle: Boolean
 
   val port: Int                = server.boundAddress.asInstanceOf[InetSocketAddress].getPort
   val address: String          = s"http://localhost:${port}"
@@ -29,9 +33,9 @@ trait ServerSuite extends munit.CatsEffectSuite with RouteSuite {
 }
 
 class StreamingServerSuite extends ServerSuite {
-  def makeServer: Http.Server = finagle.Http.server.withRequestTimeout(Duration.fromSeconds(5)).withStreaming(true)
+  override def streamingToggle: Boolean = true
 }
 
 class NonStreamingServerSuite extends ServerSuite {
-  def makeServer: Http.Server = finagle.Http.server.withRequestTimeout(Duration.fromSeconds(5))
+  override def streamingToggle: Boolean = false
 }
