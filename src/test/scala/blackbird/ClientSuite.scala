@@ -13,11 +13,10 @@ import fs2._
 import scala.concurrent.ExecutionContext
 
 trait ClientSuite extends munit.CatsEffectSuite {
-  val (server, shutdownServer)                                                    = ClientSuite.testServer.allocated.unsafeRunSync()
-  val address                                                                     = s"http://localhost:${server.address.getPort}"
-  val finagleClient: finagle.Service[finagle.http.Request, finagle.http.Response] = createFinagleClient
-  //    finagle.Http.client.withRequestTimeout(Duration.fromSeconds(5)).newService(s"localhost:${server.address.getPort}")
-  val client: Client[IO]                                                          = Blackbird.apply[IO](finagleClient, streaming = false)
+  val (server, shutdownServer) = ClientSuite.testServer.allocated.unsafeRunSync()
+  val address                  = s"http://localhost:${server.address.getPort}"
+  val finagleClient            = createFinagleClient
+  val client: Client[IO]       = Blackbird.apply[IO](finagleClient, streaming = false)
 
   def createFinagleClient: finagle.Service[finagle.http.Request, finagle.http.Response]
 
