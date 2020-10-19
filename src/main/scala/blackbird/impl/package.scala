@@ -31,7 +31,7 @@ object Impl {
     }
 
   def fromHttp4sRequest[F[_]: ConcurrentEffect](req: Request[F], streaming: Boolean): F[FRequest] = {
-    val version = toFVersion(req.httpVersion)
+    val version = ToFinagle.version(req.httpVersion)
     val method  = FH.Method(req.method.name)
     val uri     = req.uri.copy(scheme = None, authority = None).withoutFragment.renderString
 
@@ -65,7 +65,7 @@ object Impl {
     val resp = for {
       statusCode <- Status.fromInt(response.statusCode)
       headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      httpVersion = FromFinagle.toVersion(response.version)
+      httpVersion = FromFinagle.version(response.version)
     } yield Response[F](
       statusCode,
       httpVersion,
@@ -81,7 +81,7 @@ object Impl {
       method      <- Method.fromString(req.method.name)
       uri         <- Uri.fromString(req.uri)
       headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
-      version      = FromFinagle.toVersion(req.version)
+      version      = FromFinagle.version(req.version)
       twitterLocal = Local.save()
     } yield {
       Request[F](
@@ -98,7 +98,7 @@ object Impl {
   def toFinagleResponse[F[_]: ConcurrentEffect](response: Response[F], streaming: Boolean): Future[FResponse] =
     if (streaming && response.headers.exists(isChunking)) {
       val reader  = unsafeReadBodyStream(response.body)
-      val version = toFVersion(response.httpVersion)
+      val version = ToFinagle.version(response.httpVersion)
       val status  = FH.Status.fromCode(response.status.code)
       val fresp   = FResponse(version, status, reader)
       response.headers.foreach { h =>
@@ -172,14 +172,6 @@ object Impl {
 
     Client(r => Resource.liftF(client(r)))
   }
-
-  def toFVersion(ver: HttpVersion): FH.Version =
-    ver match {
-      case HttpVersion.`HTTP/1.0` => FH.Version.Http10
-      case HttpVersion.`HTTP/1.1` => FH.Version.Http11
-      case HttpVersion.`HTTP/2.0` => FH.Version.Http11
-      case x                      => FH.Version(x.major, x.minor)
-    }
 
   def liftMessageBody[F[_]: ConcurrentEffect](r: FMessage): EntityBody[F] =
     if (r.isChunked) {
@@ -278,7 +270,7 @@ object FromFinagle {
       .covary[F]
   }
 
-  def toVersion(ver: FH.Version): HttpVersion =
+  def version(ver: FH.Version): HttpVersion =
     ver match {
       case FH.Version.Http11 => HttpVersion.`HTTP/1.1`
       case FH.Version.Http10 => HttpVersion.`HTTP/1.0`
@@ -293,4 +285,13 @@ object ToFinagle {
   def toBuf(chunk: Chunk[Byte]): Buf = {
     Buf.ByteArray.Owned(chunk.toArray)
   }
+
+  def version(ver: HttpVersion): FH.Version =
+    ver match {
+      case HttpVersion.`HTTP/1.0` => FH.Version.Http10
+      case HttpVersion.`HTTP/1.1` => FH.Version.Http11
+      case HttpVersion.`HTTP/2.0` => FH.Version.Http11
+      case x                      => FH.Version(x.major, x.minor)
+    }
+
 }
