@@ -1,7 +1,7 @@
 name := "http4s-finagle"
 organization := "com.github.yaroot"
 scalaVersion := "2.13.3"
-crossScalaVersions := Seq("2.12.11", "2.13.3")
+crossScalaVersions := Seq("2.12.12", "2.13.3")
 
 scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-warnings")
 
