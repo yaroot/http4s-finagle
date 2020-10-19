@@ -33,7 +33,7 @@ object Impl {
         println(("req", req))
         val resp = app.run(req).flatMap { rep =>
           println(("rep", rep))
-          ToFinagle.response1(rep, streaming)
+          ToFinagle.response(rep, streaming)
         }
         ToFinagle.asyncEval(resp)
       }
@@ -274,7 +274,7 @@ object ToFinagle {
     }
   }
 
-  def response1[F[_]](resp: Response[F], streaming: Boolean)(implicit F: ConcurrentEffect[F]): F[FResponse] = {
+  def response[F[_]](resp: Response[F], streaming: Boolean)(implicit F: ConcurrentEffect[F]): F[FResponse] = {
     if (streaming && resp.headers.exists(FromFinagle.isChunking)) {
       for {
         body <- ToFinagle.streamBody(resp.body)
@@ -301,39 +301,4 @@ object ToFinagle {
       } yield rep
     }
   }
-
-  def response[F[_]: ConcurrentEffect](resp: Response[F], streaming: Boolean): Future[FResponse] = {
-    println(("resp", resp))
-    if (streaming && resp.headers.exists(FromFinagle.isChunking)) {
-      val fresp = ToFinagle.streamBody(resp.body).map { body =>
-        val rep = FResponse(
-          ToFinagle.version(resp.httpVersion),
-          FH.Status.fromCode(resp.status.code),
-          body
-        )
-        resp.headers.foreach { h =>
-          val _ = rep.headerMap.set(h.name.value, h.value)
-        }
-        rep
-      }
-      ToFinagle.asyncEval(fresp)
-    } else {
-      ToFinagle
-        .asyncEval(ToFinagle.accumulateAll(resp.body))
-        .map { content =>
-          val rep = FResponse()
-          rep.statusCode = resp.status.code
-          rep.content = content
-          // header op: set content-length, remove chunked transfer
-          rep.headerMap.set("Content-Length", content.length.toString)
-          resp.headers.foreach { header =>
-            if (!FromFinagle.isChunking(header)) {
-              val _ = rep.headerMap.set(header.name.value, header.value)
-            }
-          }
-          rep
-        }
-    }
-  }
-
 }
