@@ -8,19 +8,16 @@ scalacOptions in (Compile, console) --= Seq("-Ywarn-unused:imports", "-Xfatal-wa
 libraryDependencies ++= {
   val FinagleVersion = "20.9.0"
   val Http4sVersion  = "0.21.8"
-  val Slf4jVersion   = "1.7.30"
-
   Seq(
-    "org.http4s"     %% "http4s-client"                % Http4sVersion,
-    "org.http4s"     %% "http4s-server"                % Http4sVersion,
-    "com.twitter"    %% "finagle-http"                 % FinagleVersion,
-    "org.http4s"     %% "http4s-blaze-client"          % Http4sVersion % Test,
-    "org.http4s"     %% "http4s-circe"                 % Http4sVersion % Test,
-    "org.http4s"     %% "http4s-dsl"                   % Http4sVersion % Test,
-    "org.http4s"     %% "http4s-testing"               % Http4sVersion % Test,
-    "org.slf4j"       % "slf4j-simple"                 % Slf4jVersion  % Test,
-    "io.monix"       %% "minitest"                     % "2.8.2",
-    "com.codecommit" %% "cats-effect-testing-minitest" % "0.4.1"
+    "org.http4s"    %% "http4s-client"       % Http4sVersion,
+    "org.http4s"    %% "http4s-server"       % Http4sVersion,
+    "com.twitter"   %% "finagle-http"        % FinagleVersion,
+    "org.http4s"    %% "http4s-blaze-client" % Http4sVersion % Test,
+    "org.http4s"    %% "http4s-circe"        % Http4sVersion % Test,
+    "org.http4s"    %% "http4s-dsl"          % Http4sVersion % Test,
+    "org.http4s"    %% "http4s-testing"      % Http4sVersion % Test,
+    "org.slf4j"      % "slf4j-simple"        % "1.7.30"      % Test,
+    "org.typelevel" %% "munit-cats-effect"   % "0.3.0"       % Test
   )
 }
 
