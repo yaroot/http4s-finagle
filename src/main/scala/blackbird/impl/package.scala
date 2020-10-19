@@ -107,6 +107,7 @@ object Impl {
           val r = FResponse()
           r.statusCode = response.status.code
           r.content = content
+          // header op: set content-length, remove chunked transfer
           r.headerMap.set("Content-Length", content.length.toString)
           response.headers.foreach { header =>
             if (!FromFinagle.isChunking(header)) {
