@@ -14,7 +14,7 @@ object Converters {
       future.poll match {
         case Some(Return(a)) => F.pure(a)
         case Some(Throw(e))  => F.raiseError(e)
-        case None            =>
+        case None =>
           F.cancelable { cb =>
             val _ = future.respond {
               case Return(a) => cb(a.asRight)
@@ -32,9 +32,10 @@ object Converters {
 
     (F.runCancelable(f) _)
       .andThen(_.map { cancel =>
-        p.setInterruptHandler { case ex =>
-          p.updateIfEmpty(Throw(ex))
-          F.toIO(cancel).unsafeRunAsyncAndForget()
+        p.setInterruptHandler {
+          case ex =>
+            p.updateIfEmpty(Throw(ex))
+            F.toIO(cancel).unsafeRunAsyncAndForget()
         }
       })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
 
@@ -43,7 +44,12 @@ object Converters {
 
   def fromFinite(d: FiniteDuration): Duration = Duration(d.length, d.unit)
 
-  def toFs2Stream[F[_]](buf: Buf): Stream[F, Byte] = {
+  def buf2Chunk(buf: Buf): Chunk[Byte] = {
+    val bs = Buf.ByteArray.Shared.extract(buf)
+    Chunk.bytes(bs)
+  }
+
+  def buf2Stream[F[_]](buf: Buf): Stream[F, Byte] = {
     if (buf.isEmpty) Stream.empty.covary[F]
     else {
       val bytes = Buf.ByteArray.Shared.extract(buf)
@@ -54,4 +60,5 @@ object Converters {
   def toBuf(chunk: Chunk[Byte]): Buf = {
     Buf.ByteArray.Owned(chunk.toArray)
   }
+
 }

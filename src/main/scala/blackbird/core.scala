@@ -37,18 +37,19 @@ object Blackbird {
 
 object ClientFactory {
   def apply[F[_]](configured: Http.Client)(implicit F: Sync[F]): ClientFactory[F] =
-    Kleisli { case (scheme, authority) =>
-      val dest    = authority.renderString
-      val isHttps = scheme == Uri.Scheme.https
+    Kleisli {
+      case (scheme, authority) =>
+        val dest    = authority.renderString
+        val isHttps = scheme == Uri.Scheme.https
 
-      F.delay {
-        val client = if (isHttps) {
-          configured.withTls(dest)
-        } else {
-          configured
+        F.delay {
+          val client = if (isHttps) {
+            configured.withTls(dest)
+          } else {
+            configured
+          }
+          client.newService(dest, s"client-factory-$dest")
         }
-        client.newService(dest, s"client-factory-$dest")
-      }
     }
 
   def cachedFactory[F[_]](
@@ -87,8 +88,8 @@ object ClientFactory {
       }
 
     for {
-      sem    <- Semaphore.uncancelable(1)
-      ref    <- Ref.of(Map.empty[ClientKey, HttpService])
+      sem     <- Semaphore.uncancelable(1)
+      ref     <- Ref.of(Map.empty[ClientKey, HttpService])
       f       = access(sem, ref)
       destroy = closeAll(sem, ref)
     } yield Resource((f, destroy).pure[F])
