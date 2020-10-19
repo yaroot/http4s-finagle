@@ -6,11 +6,13 @@ import com.twitter.finagle.http.{Message => FMessage, Request => FRequest, Respo
 import com.twitter.finagle.{Service => Svc, http => FH}
 import com.twitter.io.{Buf, Pipe, Reader}
 import com.twitter.util._
-import fs2.Stream
+import fs2.{Chunk, Stream}
 import io.chrisdavenport.vault.{Key, Vault}
 import org.http4s._
 import org.http4s.client.Client
 import blackbird.ClientFactory
+
+import scala.concurrent.duration.FiniteDuration
 
 object Ctx {
   def restore[F[_]](req: Request[F]): Unit =
@@ -61,24 +63,23 @@ object Impl {
     response: FResponse
   ): F[Response[F]] = {
     val resp = for {
-      statusCode  <- Status.fromInt(response.statusCode)
+      statusCode <- Status.fromInt(response.statusCode)
       headers     = response.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       httpVersion = toHVersion(response.version)
-    } yield
-      Response[F](
-        statusCode,
-        httpVersion,
-        Headers(headers),
-        liftMessageBody(response)
-      )
+    } yield Response[F](
+      statusCode,
+      httpVersion,
+      Headers(headers),
+      liftMessageBody(response)
+    )
 
     ConcurrentEffect[F].fromEither(resp)
   }
 
   def fromFinagleRequest[F[_]: ConcurrentEffect](req: FRequest): Either[ParseFailure, Request[F]] =
     for {
-      method       <- Method.fromString(req.method.name)
-      uri          <- Uri.fromString(req.uri)
+      method      <- Method.fromString(req.method.name)
+      uri         <- Uri.fromString(req.uri)
       headers      = req.headerMap.toList.map { case (k, v) => Header(k, v).parsed }
       version      = toHVersion(req.version)
       twitterLocal = Local.save()
@@ -123,7 +124,7 @@ object Impl {
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
       fromFinagleRequest(freq) match {
-        case Left(exc) => Future.exception[FResponse](exc)
+        case Left(exc)  => Future.exception[FResponse](exc)
         case Right(req) =>
           Converters
             .unsafeRunAsync(app.run(req))
@@ -132,7 +133,8 @@ object Impl {
     }
 
   def mkClient[F[_]](service: Svc[FRequest, FResponse], streaming: Boolean)(implicit
-                                                                            F: ConcurrentEffect[F]): Client[F] = {
+    F: ConcurrentEffect[F]
+  ): Client[F] = {
     val execute: Request[F] => F[Response[F]] = { req: Request[F] =>
       fromHttp4sRequest(req, streaming)
         .flatMap { freq =>
@@ -163,7 +165,7 @@ object Impl {
                 }
             }
             .flatMap(toHttp4sResponse(_))
-        case None =>
+        case None    =>
           Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
     }
@@ -193,17 +195,17 @@ object Impl {
         .flatMap { bufs =>
           Stream
             .emits(bufs)
-            .map(Converters.buf2Chunk)
+            .map(FromFinagle.toChunk)
             .flatMap(Stream.chunk)
         }
     } else {
-      Stream.chunk(Converters.buf2Chunk(r.content)).covary[F]
+      Stream.chunk(FromFinagle.toChunk(r.content)).covary[F]
     }
 
   /** read body as a Buf */
   def unsafeReadBody[F[_]: ConcurrentEffect](body: EntityBody[F]): F[Buf] =
     body.chunks.compile.fold(Buf.Empty) { (accu, chunk) =>
-      accu.concat(Converters.toBuf(chunk))
+      accu.concat(ToFinagle.toBuf(chunk))
     }
 
   /** read body as a stream */
@@ -213,7 +215,7 @@ object Impl {
     val accu =
       body.chunks
         .evalMap { chunk =>
-          Converters.fromFuture(F.delay(pipe.write(Converters.toBuf(chunk))))
+          Converters.fromFuture(F.delay(pipe.write(ToFinagle.toBuf(chunk))))
         }
         .compile
         .drain
@@ -225,7 +227,7 @@ object Impl {
   }
 
   def readAll[F[_]](reader: Reader[Buf])(implicit F: ConcurrentEffect[F]): F[Vector[Buf]] = {
-    val accu = Vector.newBuilder[Buf]
+    val accu   = Vector.newBuilder[Buf]
     val result = F.delay {
       Reader
         .toAsyncStream(reader)
@@ -236,5 +238,64 @@ object Impl {
     }
 
     Converters.fromFuture(result)
+  }
+}
+
+object Converters {
+  def fromFuture[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
+    f.flatMap { future =>
+      future.poll match {
+        case Some(Return(a)) => F.pure(a)
+        case Some(Throw(e))  => F.raiseError(e)
+        case None            =>
+          F.cancelable { cb =>
+            val _ = future.respond {
+              case Return(a) => cb(a.asRight)
+              case Throw(e)  => cb(e.asLeft)
+            }
+
+            F.uncancelable(F.delay(future.raise(new FutureCancelledException)))
+          }
+      }
+    }
+  }
+
+  def unsafeRunAsync[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
+    val p = Promise[A]()
+
+    (F.runCancelable(f) _)
+      .andThen(_.map { cancel =>
+        p.setInterruptHandler { case ex =>
+          p.updateIfEmpty(Throw(ex))
+          F.toIO(cancel).unsafeRunAsyncAndForget()
+        }
+      })(e => IO.delay { val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
+
+    p
+  }
+
+
+  def buf2Stream[F[_]](buf: Buf): Stream[F, Byte] = {
+    if (buf.isEmpty) Stream.empty.covary[F]
+    else {
+      val bytes = Buf.ByteArray.Shared.extract(buf)
+      Stream.chunk(Chunk.bytes(bytes)).covary[F]
+    }
+  }
+
+}
+
+object FromFinagle {
+  def toChunk(buf: Buf): Chunk[Byte] = {
+    val bs = Buf.ByteArray.Shared.extract(buf)
+    Chunk.bytes(bs)
+  }
+}
+
+object ToFinagle {
+  def duration(d: FiniteDuration): Duration = Duration(d.length, d.unit)
+
+  def toBuf(chunk: Chunk[Byte]): Buf = {
+    Buf.ByteArray.Owned(chunk.toArray)
   }
 }
