@@ -54,21 +54,16 @@ object Impl {
     serviceFactory: ClientFactory[F],
     streaming: Boolean
   )(implicit F: ConcurrentEffect[F]): Client[F] = {
-
     val client = (req: Request[F]) => {
       val key = (req.uri.scheme, req.uri.authority).tupled
       key match {
         case Some(k) =>
-          serviceFactory
-            .run(k)
-            .flatMap { svc =>
-              ToFinagle
-                .request(req, streaming)
-                .flatMap { r =>
-                  FromFinagle.future(F.delay(svc(r)))
-                }
-            }
-            .flatMap(FromFinagle.response(_))
+          for {
+            svc   <- serviceFactory.run(k)
+            freq  <- ToFinagle.request(req, streaming)
+            fresp <- FromFinagle.future(F.delay(svc(freq)))
+            resp  <- FromFinagle.response(fresp)
+          } yield resp
         case None    =>
           Sync[F].raiseError[Response[F]](new IllegalArgumentException(s"Illegal URL ${req.uri.toString()}"))
       }
