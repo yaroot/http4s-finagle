@@ -24,7 +24,6 @@ object TestRoutes {
   val EchoPath                = "/echo"
 
   def routes[F[_]: Sync: Timer]: HttpApp[F] = Kleisli { req =>
-//    println(("-->", req.method, req.uri.path))
     val rep = req.uri.path match {
       case EchoPath                =>
         req.decode[String](body => Response[F]().withEntity(body).pure[F])
@@ -45,7 +44,6 @@ object TestRoutes {
       case _                       =>
         Response[F](Status.NotFound).pure[F]
     }
-//    println(("<-- rep", rep))
     rep
   }
 

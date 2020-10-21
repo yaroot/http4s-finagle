@@ -26,16 +26,12 @@ object Ctx {
 object Impl {
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
-//      println(("req", freq, streaming))
       val a = FromFinagle.request(freq)
 
       def run(req: Request[F]): Future[FResponse] = {
-//        println("req" -> req)
         val frep = for {
           resp  <- app.run(req)
-//          _      = println("resp" -> resp)
           fresp <- ToFinagle.response(resp, streaming)
-//          _      = println("fresp" -> fresp)
         } yield fresp
         ToFinagle.asyncEval(frep)
       }
@@ -126,12 +122,10 @@ object FromFinagle {
   }
 
   def body[F[_]](r: FMessage)(implicit F: ConcurrentEffect[F]): Stream[F, Byte] = {
-//    println(("chucking", r.isChunked))
     if (r.isChunked) {
       Stream
         .eval(FromFinagle.readAll[F](r.reader))
         .flatMap { bufs =>
-//          println(bufs)
           FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
         }
     } else {
