@@ -26,16 +26,16 @@ object Ctx {
 object Impl {
   def mkService[F[_]: ConcurrentEffect](app: HttpApp[F], streaming: Boolean): Svc[FRequest, FResponse] =
     Svc.mk[FRequest, FResponse] { freq =>
-      println(("req", freq, streaming))
+//      println(("req", freq, streaming))
       val a = FromFinagle.request(freq)
 
       def run(req: Request[F]): Future[FResponse] = {
-        println("req" -> req)
+//        println("req" -> req)
         val frep = for {
           resp  <- app.run(req)
-          _      = println("resp" -> resp)
+//          _      = println("resp" -> resp)
           fresp <- ToFinagle.response(resp, streaming)
-          _      = println("fresp" -> fresp)
+//          _      = println("fresp" -> fresp)
         } yield fresp
         ToFinagle.asyncEval(frep)
       }
@@ -107,22 +107,8 @@ object FromFinagle {
       case x                 => HttpVersion(x.major, x.minor)
     }
 
-  def future[F[_], A](f: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
-    f.flatMap { future =>
-      future.poll match {
-        case Some(Return(a)) => F.pure(a)
-        case Some(Throw(e))  => F.raiseError(e)
-        case None            =>
-          F.cancelable { cb =>
-            val _ = future.respond {
-              case Return(a) => cb(a.asRight)
-              case Throw(e)  => cb(e.asLeft)
-            }
-
-            F.uncancelable(F.delay(future.raise(new FutureCancelledException)))
-          }
-      }
-    }
+  def future[F[_], A](ffa: F[Future[A]])(implicit F: ConcurrentEffect[F]): F[A] = {
+    cats.effect.interop.twitter.fromFuture(ffa)
   }
 
   def readAll[F[_]](reader: Reader[Buf])(implicit F: ConcurrentEffect[F]): F[Vector[Buf]] = {
@@ -140,12 +126,12 @@ object FromFinagle {
   }
 
   def body[F[_]](r: FMessage)(implicit F: ConcurrentEffect[F]): Stream[F, Byte] = {
-    println(("chucking", r.isChunked))
+//    println(("chucking", r.isChunked))
     if (r.isChunked) {
       Stream
         .eval(FromFinagle.readAll[F](r.reader))
         .flatMap { bufs =>
-          println(bufs)
+//          println(bufs)
           FromFinagle.toStream[F](bufs.map(FromFinagle.toChunk))
         }
     } else {
@@ -205,18 +191,8 @@ object ToFinagle {
       case x                      => FH.Version(x.major, x.minor)
     }
 
-  def asyncEval[F[_], A](f: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
-    val p = Promise[A]()
-
-    (F.runCancelable(f) _)
-      .andThen(_.map { cancel =>
-        p.setInterruptHandler { case ex =>
-          p.updateIfEmpty(Throw(ex))
-          F.toIO(cancel).unsafeRunAsyncAndForget()
-        }
-      })(e => IO.delay { println(e); val _ = p.updateIfEmpty(e.fold(Throw(_), Return(_))) })
-
-    p
+  def asyncEval[F[_], A](fa: F[A])(implicit F: ConcurrentEffect[F]): Future[A] = {
+    cats.effect.interop.twitter.unsafeRunAsyncT(fa)
   }
 
   def streamBody[F[_]](body: EntityBody[F])(implicit F: ConcurrentEffect[F]): F[Reader[Buf]] = {
