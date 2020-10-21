@@ -10,7 +10,8 @@ resolvers += "quasi-category" at "https://quasi-category.github.io/packages/mave
 libraryDependencies ++= {
   val FinagleVersion     = "20.9.0"
   val Http4sVersion      = "0.21.8"
-  val TwitterCatsVersion = "0.1.8-25-9ff2c97e"
+  val TwitterCatsVersion = "0.0.0-1-17fb9ef7"
+
   Seq(
     "com.github.quasi-category" %% "cats-effect-interop-twitter" % TwitterCatsVersion,
     "org.http4s"                %% "http4s-client"               % Http4sVersion,
